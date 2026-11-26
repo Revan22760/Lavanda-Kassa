@@ -27,6 +27,7 @@
     <div class="bar" style="margin-bottom:8px"><button id="sel" class="chip" onclick="sellerModal()"></button><button class="chip" onclick="custList()">📒 Nisyə dəftəri</button></div>
     <div class="bar"><input id="q" placeholder="Barkod və ya məhsul adı" autocomplete="off" enterkeyhint="done"><button class="ic" onclick="openScan('sell')" aria-label="Barkod skan et">📷</button></div>
     <div id="sug"></div>
+    <div id="qs"></div>
     <div id="cartl"></div>
   </section>
   <section id="v-prod" class="view">
@@ -36,9 +37,10 @@
   <section id="v-rep" class="view"></section>
   <section id="v-set" class="view"></section>
 </main>
-<div id="scan"><video id="vid" playsinline muted></video><div class="frame"></div><div id="smsg"></div><button id="sx" onclick="closeScan()" aria-label="Bağla">✕</button></div>
+<div id="scan"><video id="vid" playsinline muted></video><div class="frame"></div><div id="smsg"></div><div id="spanel"></div><button id="sx" onclick="closeScan()" aria-label="Bağla">✕</button></div>
 <div id="mdl" onclick="if(event.target===this)closeModal()"><div id="sheet"></div></div>
 <div id="tst"></div>
+<div id="prn"></div>
 <script src="app.js"></script>
 </body>
 </html>

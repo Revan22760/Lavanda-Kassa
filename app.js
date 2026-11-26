@@ -6,7 +6,7 @@ const LOW = 5;
 const ld = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } };
 let products = ld(K.p, []), sales = ld(K.s, []), cfg = ld(K.c, { shop: 'Mağaza Kassası' });
 let cart = [], view = 'sell', period = 'day', persisted = false, dp = null;
-let customers = ld(K.u, []), ledger = ld(K.l, []), unlocked = false, payMode = 'cash', selCust = '';
+let customers = ld(K.u, []), ledger = ld(K.l, []), unlocked = false, payMode = 'cash', selCust = '', lastAdded = '', formImg = '', hold = false, pend = null, pendCode = '';
 fixCfg();
 
 /* Ayrıca modullar: hazırda QOŞULMAYIB. Gələcəkdə fiskal çek / bank terminalı buraya bağlanacaq. */
@@ -54,12 +54,12 @@ function addToCart(p) {
   const i = cart.find(x => x.id === p.id), q = i ? i.qty : 0;
   if (q + 1 > p.stock) { toast(`Stok kifayət deyil: ${p.name} (${p.stock} ədəd)`, 'err'); return false; }
   i ? i.qty++ : cart.push({ id: p.id, qty: 1 });
-  rCart(); return true;
+  lastAdded = p.id; rCart(); return true;
 }
 function chg(id, d) {
   const i = cart.find(x => x.id === id), p = products.find(x => x.id === id);
   if (d > 0) { addToCart(p); return; }
-  i.qty--; if (i.qty < 1) cart = cart.filter(x => x !== i);
+  i.qty--; lastAdded = ''; if (i.qty < 1) cart = cart.filter(x => x !== i);
   rCart();
 }
 function clearCart() { if (cart.length && confirm('Səbət təmizlənsin?')) { cart = []; rCart(); } }
@@ -67,10 +67,10 @@ function rCart() {
   const rows = cart.map(i => ({ i, p: products.find(x => x.id === i.id) })).filter(r => r.p);
   cart = rows.map(r => r.i);
   $('#cartl').innerHTML = rows.length
-    ? rows.map(({ i, p }) => `<div class="card item"><div class="grow"><b>${esc(p.name)}</b><small>${money(p.sell)} × ${i.qty} = ${money(p.sell * i.qty)}</small></div><div class="qty"><button onclick="chg('${p.id}',-1)" aria-label="Azalt">−</button><span>${i.qty}</span><button onclick="chg('${p.id}',1)" aria-label="Artır">+</button></div></div>`).join('') +
+    ? rows.map(({ i, p }) => `<div class="card item${p.id === lastAdded ? ' pop' : ''}"><div class="grow"><b>${esc(p.name)}</b><small>${money(p.sell)} × ${i.qty} = ${money(p.sell * i.qty)}</small></div><div class="qty"><button onclick="chg('${p.id}',-1)" aria-label="Azalt">−</button><span>${i.qty}</span><button onclick="chg('${p.id}',1)" aria-label="Artır">+</button></div></div>`).join('') +
       '<button class="btn gh" style="margin-top:12px" onclick="clearCart()">Səbəti təmizlə</button>'
     : '<div class="empty">Səbət boşdur<br><small>Barkodu skan edin və ya məhsul axtarın</small></div>';
-  $('#tot').textContent = money(total()); $('#pay').disabled = !rows.length; $('#sel').textContent = '👤 ' + cfg.seller;
+  $('#tot').textContent = money(total()); $('#pay').disabled = !rows.length; $('#sel').textContent = '👤 ' + cfg.seller; { const t = $('#tot'); t.classList.remove('bump'); void t.offsetWidth; t.classList.add('bump'); } rQs();
 }
 function pick(id) { const p = products.find(x => x.id === id); if (p && addToCart(p)) { $('#q').value = ''; $('#sug').innerHTML = ''; } }
 $('#q').oninput = e => {
@@ -157,14 +157,14 @@ async function openScan(m) {
   } catch (e) { closeScan(); toast(e.name === 'NotAllowedError' ? 'Kameraya icazə verilməyib' : 'Kamera açılmadı', 'err'); }
 }
 async function tick() {
-  if (busy) return; busy = true;
+  if (busy || hold) return; busy = true;
   try {
     const r = await det.detect($('#vid'));
     if (r.length) { const c = r[0].rawValue, n = Date.now(); if (c !== last || n - lastT > 2000) { last = c; lastT = n; onCode(c); } }
   } catch (e) { }
   busy = false;
 }
-function closeScan() { clearInterval(timer); if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; $('#scan').classList.remove('on'); }
+function closeScan() { clearInterval(timer); if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; hold = false; pend = null; $('#spanel').classList.remove('on'); $('#smsg').style.display = ''; $('#scan').classList.remove('on'); }
 function beep(bad) {
   try {
     const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator();
@@ -176,6 +176,7 @@ function beep(bad) {
 function onCode(c) {
   if (mode === 'sell') {
     const p = byCode(c);
+    if (cfg.confirmScan !== false) return scanAsk(c, p);
     if (!p) { beep(true); $('#smsg').textContent = '⚠ Barkod tapılmadı: ' + c; toast('Barkod bazada tapılmadı: ' + c, 'err'); }
     else if (addToCart(p)) { beep(); $('#smsg').textContent = '✔ ' + p.name + ' əlavə olundu'; }
     else { beep(true); $('#smsg').textContent = '⚠ Stok kifayət deyil: ' + p.name; }
@@ -187,18 +188,22 @@ function onCode(c) {
 function rProd() {
   const v = $('#pq').value.trim();
   const l = (v ? match(v) : products.slice()).sort((a, b) => a.name.localeCompare(b.name, 'az'));
-  $('#plist').innerHTML = l.length ? l.map(p => `<div class="card item" onclick="editProduct('${p.id}')"><div class="grow"><b>${esc(p.name)}</b><small>${esc(p.barcode || 'barkodsuz')} • alış ${money(p.buy)}</small></div><div class="r"><b>${money(p.sell)}</b><br><span class="badge ${p.stock <= 0 ? 'er' : p.stock <= LOW ? 'wa' : 'ok'}">${p.stock} ədəd</span></div></div>`).join('')
+  $('#plist').innerHTML = l.length ? l.map(p => `<div class="card item" onclick="editProduct('${p.id}')"><div class="th">${thumb(p)}</div><div class="grow"><b>${esc(p.name)}</b><small>${esc(p.barcode || 'barkodsuz')} • alış ${money(p.buy)}</small></div><div class="r"><b>${money(p.sell)}</b><br><span class="badge ${p.stock <= 0 ? 'er' : p.stock <= LOW ? 'wa' : 'ok'}">${p.stock} ədəd</span></div></div>`).join('')
     : `<div class="empty">${products.length ? 'Məhsul tapılmadı' : 'Hələ məhsul yoxdur<br><small>Əlavə etmək üçün + düyməsinə basın</small>'}</div>`;
 }
-function editProduct(id) {
-  const p = products.find(x => x.id === id) || { name: '', barcode: '', buy: '', sell: '', stock: '' };
+function editProduct(id, bc) {
+  const p = products.find(x => x.id === id) || { name: '', barcode: bc || '', buy: '', sell: '', stock: '' };
+  formImg = p.img || '';
   modal(`<h2>${id ? 'Məhsulu redaktə et' : 'Yeni məhsul'}</h2>
+  <div class="bar" style="align-items:center;margin-bottom:10px"><div class="th big" id="f-th" onclick="$('#f-img').click()">${thumb(p)}</div><div class="grow"><button type="button" class="btn gh" style="padding:10px" onclick="$('#f-img').click()">📷 Şəkil seç / çək</button></div><input type="file" id="f-img" accept="image/*" hidden onchange="pickImg(event)"></div>
   <label>Ad<input id="f-n" value="${esc(p.name)}"></label>
-  <label>Barkod<div class="bar" style="margin-top:4px"><input id="f-bc" inputmode="numeric" value="${esc(p.barcode)}" style="margin:0"><button type="button" class="ic" onclick="openScan('form')" aria-label="Skan et">📷</button></div></label>
+  <label>Barkod<div class="bar" style="margin-top:4px"><input id="f-bc" inputmode="numeric" value="${esc(p.barcode)}" style="margin:0"><button type="button" class="ic" onclick="openScan('form')" aria-label="Skan et">📷</button><button type="button" class="ic" onclick="genBc()" aria-label="Barkod yarat">🔢</button></div></label>
   <div class="row2"><label>Alış qiyməti (₼)<input id="f-b" type="number" inputmode="decimal" step="0.01" min="0" value="${p.buy}"></label>
   <label>Satış qiyməti (₼)<input id="f-s" type="number" inputmode="decimal" step="0.01" min="0" value="${p.sell}"></label></div>
   <label>Stok sayı<input id="f-st" type="number" inputmode="numeric" step="1" min="0" value="${p.stock}"></label>
-  <div class="row2">${id ? `<button class="btn er" onclick="delProduct('${id}')">Sil</button>` : '<button class="btn gh" onclick="closeModal()">Ləğv et</button>'}<button class="btn" onclick="saveProduct('${id || ''}')">Yadda saxla</button></div>`);
+  <label class="chk"><input type="checkbox" id="f-q" ${p.quick ? 'checked' : ''}> ⚡ Sürətli satışda həmişə göstər</label>
+  <div class="row2">${id ? `<button class="btn er" onclick="delProduct('${id}')">Sil</button>` : '<button class="btn gh" onclick="closeModal()">Ləğv et</button>'}<button class="btn" onclick="saveProduct('${id || ''}')">Yadda saxla</button></div>
+  ${id ? `<br><button class="btn gh" onclick="labelModal('${id}')">🏷 Etiket çap et</button>` : ''}`);
 }
 function saveProduct(id) {
   const n = $('#f-n').value.trim(), bc = $('#f-bc').value.trim(), b = parseFloat($('#f-b').value), s = parseFloat($('#f-s').value), st = parseInt($('#f-st').value, 10);
@@ -207,7 +212,7 @@ function saveProduct(id) {
   if (isNaN(s) || s < 0) return toast('Satış qiymətini düzgün yazın', 'err');
   if (isNaN(st) || st < 0) return toast('Stok sayını düzgün yazın', 'err');
   if (bc && products.some(p => p.barcode === bc && p.id !== id)) return toast('Bu barkod artıq başqa məhsulda var', 'err');
-  const o = { name: n, barcode: bc, buy: r2(b), sell: r2(s), stock: st };
+  const o = { name: n, barcode: bc, buy: r2(b), sell: r2(s), stock: st, img: formImg, quick: $('#f-q').checked };
   if (id) Object.assign(products.find(p => p.id === id), o); else products.push({ id: uid(), ...o });
   if (!save()) return;
   closeModal(); rProd(); toast('Yadda saxlanıldı', 'ok');
@@ -309,7 +314,7 @@ function rSet() {
   <div class="card"><h2>Modullar</h2>
   <div class="item"><div class="grow"><b>🧾 Rəsmi fiskal çek</b><small>Hələ qoşulmayıb. Qəbzlər qeyri-fiskaldır.</small></div><span class="badge wa">Qoşulmayıb</span></div><hr style="border:0;border-top:1px solid var(--ln)">
   <div class="item"><div class="grow"><b>💳 Bank kartı</b><small>Hələ qoşulmayıb. Yalnız nağd ödəniş.</small></div><span class="badge wa">Qoşulmayıb</span></div></div>
-  <p class="muted" style="text-align:center">Mağaza Kassası v1.2 • AZN</p>`;
+  <p class="muted" style="text-align:center">Mağaza Kassası v1.3 • AZN</p>`;
 }
 
 /* ---------- Satıcılar, PIN, nisyə ---------- */
@@ -362,7 +367,8 @@ async function pinSave() {
   cfg.pin = await hash(a); unlocked = true; save(); closeModal(); rSet(); toast('PIN təyin edildi', 'ok');
 }
 function pinOff() { if (confirm('PIN silinsin?')) { delete cfg.pin; save(); rSet(); } }
-const secCards = () => `<div class="card"><h2>🔒 PIN kod</h2><small>${cfg.pin ? 'Hesabat və Parametrlər PIN ilə qorunur.' : 'PIN təyin etsəniz, Hesabat və Parametrlərə yalnız PIN ilə girmək olar.'} Bu, təsadüfi girişin qarşısını alır, telefonun özünü qorumur. PIN ehtiyat nüsxəyə yazılmır.</small><br><br>
+const secCards = () => `<div class="card"><h2>📷 Skaner</h2><button class="btn gh" onclick="togConf()">Skanerdə təsdiq düyməsi: ${cfg.confirmScan !== false ? 'AÇIQ' : 'BAĞLI'}</button></div>
+<div class="card"><h2>🔒 PIN kod</h2><small>${cfg.pin ? 'Hesabat və Parametrlər PIN ilə qorunur.' : 'PIN təyin etsəniz, Hesabat və Parametrlərə yalnız PIN ilə girmək olar.'} Bu, təsadüfi girişin qarşısını alır, telefonun özünü qorumur. PIN ehtiyat nüsxəyə yazılmır.</small><br><br>
 <button class="btn" onclick="pinSet()">${cfg.pin ? 'PIN-i dəyiş' : 'PIN təyin et'}</button>${cfg.pin ? '<br><button class="btn gh" onclick="pinOff()">PIN-i sil</button>' : ''}</div>
 <div class="card"><h2>👤 Satıcılar</h2>${cfg.sellers.map((n, i) => `<div class="item" style="margin-bottom:8px"><div class="grow"><b>${esc(n)}</b></div><button class="btn gh" style="width:auto;padding:6px 14px" onclick="delSeller(${i})" aria-label="Sil">✕</button></div>`).join('')}
 <div class="bar"><input id="sn" placeholder="Yeni satıcı adı" maxlength="30"><button class="ic" onclick="addSeller()" aria-label="Əlavə et">+</button></div></div>`;
@@ -472,10 +478,91 @@ function deSave() {
   if (!save()) return; closeModal(); toast('Günsonu qeyd olundu', 'ok');
 }
 
+/* ---------- Şəkil, sürətli satış, barkod/etiket, skaner təsdiqi, yenilik ---------- */
+const thumb = p => p.img ? `<img src="${esc(p.img)}" alt="">` : esc((p.name || '?').trim().charAt(0).toUpperCase() || '?');
+function pickImg(e) {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  const im = new Image(), u = URL.createObjectURL(f);
+  im.onload = () => {
+    const c = document.createElement('canvas'), S = 160, m = Math.min(im.width, im.height); c.width = c.height = S;
+    c.getContext('2d').drawImage(im, (im.width - m) / 2, (im.height - m) / 2, m, m, 0, 0, S, S);
+    formImg = c.toDataURL('image/jpeg', 0.72); URL.revokeObjectURL(u); $('#f-th').innerHTML = `<img src="${formImg}" alt="">`;
+  };
+  im.onerror = () => toast('Şəkil açılmadı', 'err'); im.src = u;
+}
+function rQs() {
+  const m = {}; sales.forEach(s => s.items.forEach(i => { m[i.id] = (m[i.id] || 0) + i.qty; }));
+  const top = Object.entries(m).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]).map(e => e[0]);
+  const pin = products.filter(p => p.quick || !p.barcode).sort((a, b) => a.name.localeCompare(b.name, 'az')).map(p => p.id);
+  const l = [...new Set([...pin, ...top])].slice(0, 12).map(id => products.find(p => p.id === id)).filter(Boolean);
+  $('#qs').innerHTML = l.length ? `<div class="qh" onclick="togQs()"><span>⚡ Sürətli satış</span><span>${cfg.qsHide ? '▸' : '▾'}</span></div>` +
+    (cfg.qsHide ? '' : `<div class="qg">${l.map(p => `<button class="qt${p.stock <= 0 ? ' off' : ''}" onclick="quick('${p.id}')"><div class="th">${thumb(p)}</div><b>${esc(p.name)}</b><small>${money(p.sell)}</small></button>`).join('')}</div>`) : '';
+}
+function togQs() { cfg.qsHide = !cfg.qsHide; save(); rQs(); }
+function quick(id) { const p = products.find(x => x.id === id); if (p && addToCart(p) && navigator.vibrate) navigator.vibrate(20); }
+const ean = b => { let s = 0; for (let i = 0; i < 12; i++) s += (+b[i]) * (i % 2 ? 3 : 1); return (10 - s % 10) % 10; };
+function genBc() {
+  let c; do { cfg.bcSeq = (cfg.bcSeq || 0) + 1; const b = '200' + String(cfg.bcSeq).padStart(9, '0'); c = b + ean(b); } while (products.some(p => p.barcode === c));
+  $('#f-bc').value = c; save(); toast('Yeni barkod yaradıldı', 'ok');
+}
+function lblCode(b) { b = (b || '').trim(); if (/^\d{12}$/.test(b)) b = '0' + b; return /^\d{13}$/.test(b) && ean(b) === +b[12] ? b : null; }
+function ean13svg(c) {
+  const L = ['0001101', '0011001', '0010011', '0111101', '0100011', '0110001', '0101111', '0111011', '0110111', '0001011'],
+    G = ['0100111', '0110011', '0011011', '0100001', '0011101', '0111001', '0000101', '0010001', '0001001', '0010111'],
+    R = ['1110010', '1100110', '1101100', '1000010', '1011100', '1001110', '1010000', '1000100', '1001000', '1110100'],
+    P = ['LLLLLL', 'LLGLGG', 'LLGGLG', 'LLGGGL', 'LGLLGG', 'LGGLLG', 'LGGGLL', 'LGLGLG', 'LGLGGL', 'LGGLGL'];
+  let b = '101'; for (let i = 1; i < 7; i++) b += (P[c[0]][i - 1] === 'L' ? L : G)[c[i]];
+  b += '01010'; for (let i = 7; i < 13; i++) b += R[c[i]]; b += '101';
+  let d = '', i = 0;
+  while (i < b.length) { if (b[i] === '1') { let j = i; while (b[j] === '1') j++; d += `M${9 + i} 0h${j - i}v44h-${j - i}z`; i = j; } else i++; }
+  const t = (x, s) => `<text x="${x}" y="54" text-anchor="middle" font-size="9" font-family="monospace">${s}</text>`;
+  let tx = t(4, c[0]); for (let k = 1; k < 7; k++) tx += t(15.5 + 7 * (k - 1), c[k]); for (let k = 7; k < 13; k++) tx += t(62.5 + 7 * (k - 7), c[k]);
+  return `<svg viewBox="0 0 113 58" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><path d="${d}"/>${tx}</svg>`;
+}
+const labelHtml = (p, c) => `<div class="lb"><b>${esc(p.name)}</b>${ean13svg(c)}<span>${money(p.sell)}</span></div>`;
+function labelModal(id) {
+  const p = products.find(x => x.id === id), c = lblCode(p.barcode);
+  if (!c) return toast('Etiket üçün düzgün EAN-13 barkod lazımdır. Məhsulda 🔢 düyməsi ilə yeni barkod yaradın.', 'err');
+  modal(`<h2>🏷 Etiket</h2><div style="display:flex;justify-content:center;margin-bottom:12px">${labelHtml(p, c)}</div>
+  <label>Nüsxə sayı<input id="l-n" type="number" inputmode="numeric" min="1" max="100" value="1"></label>
+  <div class="row2"><button class="btn gh" onclick="editProduct('${id}')">Geri</button><button class="btn" onclick="printLabels('${id}')">🖨 Çap et</button></div>
+  <small>Çap pəncərəsində printeri və ya "PDF kimi saxla" seçin.</small>`);
+}
+function printLabels(id) {
+  const p = products.find(x => x.id === id), c = lblCode(p.barcode), n = Math.max(1, Math.min(100, parseInt($('#l-n').value, 10) || 1));
+  $('#prn').innerHTML = Array(n).fill(labelHtml(p, c)).join(''); document.body.classList.add('prn'); setTimeout(() => print(), 80);
+}
+addEventListener('afterprint', () => { document.body.classList.remove('prn'); $('#prn').innerHTML = ''; });
+function scanAsk(c, p) {
+  hold = true; pend = p || null; pendCode = c; beep(!p); $('#smsg').style.display = 'none';
+  $('#spanel').innerHTML = p
+    ? `<div class="item"><div class="th">${thumb(p)}</div><div class="grow"><b>${esc(p.name)}</b><small>${money(p.sell)} • stok ${p.stock}</small></div></div><div class="row2" style="margin-top:12px"><button class="btn gh" onclick="scanSkip()">Ləğv et</button><button class="btn" onclick="scanOk()">✔ Əlavə et</button></div>`
+    : `<b>⚠ Barkod bazada tapılmadı</b><br><small>${esc(c)}</small><div class="row2" style="margin-top:12px"><button class="btn gh" onclick="scanSkip()">Davam et</button><button class="btn" onclick="scanNew()">➕ Yeni məhsul</button></div>`;
+  $('#spanel').classList.add('on');
+}
+function scanDone() { hold = false; lastT = Date.now(); $('#spanel').classList.remove('on'); $('#smsg').style.display = ''; }
+function scanOk() { if (pend && addToCart(pend)) { beep(); $('#smsg').textContent = '✔ ' + pend.name + ' əlavə olundu'; } else beep(true); scanDone(); }
+function scanSkip() { scanDone(); }
+function scanNew() { const c = pendCode; closeScan(); go('prod'); editProduct(null, c); }
+function togConf() { cfg.confirmScan = cfg.confirmScan === false; save(); rSet(); }
+function showUpd() {
+  if ($('#upd')) return;
+  const d = document.createElement('div'); d.id = 'upd';
+  d.innerHTML = '<span>🔄 Yeni versiya hazırdır</span><button onclick="doUpd()">Yenilə</button>'; document.body.appendChild(d);
+}
+function doUpd() { if (cart.length && !confirm('Səbətdəki məhsullar silinəcək. Yenilənsin?')) return; location.reload(); }
+
 /* ---------- Başlanğıc ---------- */
 function updNet() { const n = $('#net'); n.textContent = navigator.onLine ? 'Onlayn' : 'Offlayn'; n.classList.toggle('off', !navigator.onLine); }
 addEventListener('online', updNet); addEventListener('offline', updNet);
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); dp = e; if (view === 'set') rSet(); });
-if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('service-worker.js').catch(() => { }));
+if ('serviceWorker' in navigator) {
+  const had = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) showUpd(); });
+  addEventListener('load', () => navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' }).then(reg => {
+    const chk = () => reg.update().catch(() => { });
+    setInterval(chk, 30 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (!document.hidden) chk(); });
+  }).catch(() => { }));
+}
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(g => { persisted = g; if (view === 'set') rSet(); }).catch(() => { });
 applyCfg(); updNet(); go('sell');
