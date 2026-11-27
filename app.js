@@ -86,24 +86,36 @@ $('#q').onkeydown = e => { // USB/Bluetooth barkod oxuyucu da Enter ilə işləy
 
 function payModal(mode) {
   if (!cart.length) return;
-  payMode = mode || 'cash';
-  const t = total(), cr = payMode === 'credit';
+  payMode = mode || 'cash'; if (payMode === 'deliv') dPayMode = 'paid';
+  const t = total(), cr = payMode === 'credit', dv = payMode === 'deliv', cs = payMode === 'cash';
   const amts = [...new Set([t, ...[5, 10, 20, 50, 100].map(n => Math.ceil(t / n) * n)])].filter(a => a >= t).slice(0, 4);
-  const body = cr
-    ? `${customers.length ? `<label>Müştəri<select id="cust" onchange="calc()"><option value="">Seçin…</option>${customers.map(c => `<option value="${c.id}"${c.id === selCust ? ' selected' : ''}>${esc(c.name)} (borc ${money(bal(c.id))})</option>`).join('')}</select></label>` : ''}
+  const body = dv
+    ? `<label>Ad Soyad<input id="d-n" maxlength="60" oninput="calc()"></label>
+    <label>Telefon<input id="d-p" type="tel" inputmode="tel" maxlength="20" oninput="calc()"></label>
+    <label>Ünvan<textarea id="d-a" rows="2" maxlength="200" placeholder="Şəhər, rayon, küçə, bina, mənzil" oninput="calc()"></textarea></label>
+    <label>Poçt indeksi<input id="d-z" maxlength="10" placeholder="AZ1000"></label>
+    <div class="seg"><button id="d-pd" class="on" onclick="dPay('paid')">✅ Ödənilib</button><button id="d-pc" onclick="dPay('cod')">💵 Kuryer alacaq</button></div>`
+    : cr
+      ? `${customers.length ? `<label>Müştəri<select id="cust" onchange="calc()"><option value="">Seçin…</option>${customers.map(c => `<option value="${c.id}"${c.id === selCust ? ' selected' : ''}>${esc(c.name)} (borc ${money(bal(c.id))})</option>`).join('')}</select></label>` : ''}
     <button class="btn gh" style="margin-bottom:12px" onclick="newCust('pay')">+ Yeni müştəri</button>
     <label>İndi ödənilən (₼, ixtiyari)<input id="rcv" type="number" inputmode="decimal" step="0.01" min="0" oninput="calc()"></label>`
-    : `<label>Alınan məbləğ (₼)<input id="rcv" type="number" inputmode="decimal" step="0.01" min="0" oninput="calc()"></label>
+      : `<label>Alınan məbləğ (₼)<input id="rcv" type="number" inputmode="decimal" step="0.01" min="0" oninput="calc()"></label>
     <div class="chips">${amts.map((a, k) => `<button onclick="setRcv(${a})">${k ? money(a) : 'Dəqiq'}</button>`).join('')}</div>`;
-  modal(`<h2>Ödəniş</h2><div class="big">${money(t)}</div>
-  <div class="seg"><button class="${cr ? '' : 'on'}" onclick="payModal('cash')">💵 Nağd</button><button class="${cr ? 'on' : ''}" onclick="payModal('credit')">📒 Nisyə</button><button disabled>💳 Qoşulmayıb</button></div>
+  modal(`<h2>${dv ? 'Çatdırılma sifarişi' : 'Ödəniş'}</h2><div class="big">${money(t)}</div>
+  <div class="seg"><button class="${cs ? 'on' : ''}" onclick="payModal('cash')">💵 Nağd</button><button class="${cr ? 'on' : ''}" onclick="payModal('credit')">📒 Nisyə</button><button class="${dv ? 'on' : ''}" onclick="payModal('deliv')">🚚 Çatdırılma</button></div>
   ${body}<div class="change" id="chv"></div>
   <div class="row2"><button class="btn gh" onclick="closeModal()">Ləğv et</button><button class="btn" id="ok" onclick="finish()" disabled>Təsdiqlə</button></div>`);
   calc();
 }
+function dPay(m) { dPayMode = m; $('#d-pd').classList.toggle('on', m === 'paid'); $('#d-pc').classList.toggle('on', m === 'cod'); calc(); }
 function setRcv(a) { $('#rcv').value = a; calc(); }
 function calc() {
-  const t = total(), v = r2(parseFloat($('#rcv').value)), c = $('#cust');
+  const t = total();
+  if (payMode === 'deliv') {
+    $('#chv').textContent = (dPayMode === 'cod' ? 'Kuryer alacaq: ' : 'Ödənilib: ') + money(t);
+    $('#ok').disabled = !($('#d-n').value.trim() && $('#d-p').value.trim() && $('#d-a').value.trim()); return;
+  }
+  const v = r2(parseFloat($('#rcv').value)), c = $('#cust');
   if (payMode === 'credit') {
     $('#chv').textContent = 'Borca yazılacaq: ' + money(t - v);
     $('#ok').disabled = !(c && c.value && v >= 0 && v < t); return;
@@ -113,12 +125,17 @@ function calc() {
   $('#ok').disabled = !ok;
 }
 function finish() {
-  const t = total(), v = r2(parseFloat($('#rcv').value)), cr = payMode === 'credit', c = cr && customers.find(x => x.id === $('#cust').value);
-  if (!cart.length || v < 0 || (cr ? !(c && v < t) : v < t)) return;
+  const t = total(), dv = payMode === 'deliv', cr = payMode === 'credit';
+  const v = dv ? 0 : r2(parseFloat($('#rcv').value)), c = cr && customers.find(x => x.id === $('#cust').value);
+  let d = null;
+  if (dv) { d = { name: $('#d-n').value.trim(), phone: $('#d-p').value.trim(), addr: $('#d-a').value.trim(), zip: $('#d-z').value.trim(), pay: dPayMode, st: 'new' }; if (!d.name || !d.phone || !d.addr) return; }
+  else if (v < 0 || (cr ? !(c && v < t) : v < t)) return;
+  if (!cart.length) return;
   for (const i of cart) { const p = products.find(x => x.id === i.id); if (!p || p.stock < i.qty) return toast('Stok kifayət deyil: ' + (p ? p.name : ''), 'err'); }
-  const s = { id: uid(), ts: Date.now(), total: t, paid: v, change: cr ? 0 : r2(v - t), method: cr ? 'credit' : 'cash', seller: cfg.seller,
+  const s = { id: uid(), ts: Date.now(), total: t, paid: v, change: (cr || dv) ? 0 : r2(v - t), method: dv ? 'delivery' : cr ? 'credit' : 'cash', seller: cfg.seller,
     items: cart.map(i => { const p = products.find(x => x.id === i.id); return { id: p.id, name: p.name, barcode: p.barcode, qty: i.qty, buy: p.buy, sell: p.sell }; }) };
   if (cr) { s.cid = c.id; s.cname = c.name; s.debt = r2(t - v); }
+  if (dv) s.dlv = d;
   const bak = JSON.stringify(products);
   cart.forEach(i => { products.find(x => x.id === i.id).stock -= i.qty; });
   sales.push(s);
@@ -127,17 +144,14 @@ function finish() {
   cart = []; selCust = ''; rCart(); receipt(s, true);
 }
 function receipt(s, fresh) {
-  const rt = s.ret, cr = s.method === 'credit';
-  modal(`<h2>${fresh ? (rt ? '↩ Qaytarma tamamlandı' : '✅ Satış tamamlandı') : (rt ? 'Qaytarma №' : 'Satış №') + (sales.indexOf(s) + 1)}</h2>
-  ${fresh ? `<div class="change">${rt ? 'Qaytarılacaq nağd: ' + money(s.cash) : cr ? 'Borca yazıldı: ' + money(s.debt) : 'Qaytarılacaq: ' + money(s.change)}</div>` : ''}
-  <div class="rc"><div><span>${esc(cfg.shop)}</span><span>${dt(s.ts)}</span></div><div><span>Satıcı: ${esc(s.seller || '—')}</span></div><hr>
-  ${s.items.map(i => `<div><span>${esc(i.name)} ×${Math.abs(i.qty)}</span><span>${money(i.sell * i.qty)}</span></div>`).join('')}<hr>
-  <div><b>CƏMİ</b><b>${money(s.total)}</b></div>${payLines(s).map(([k, v]) => `<div><span>${esc(k)}</span><span>${money(v)}</span></div>`).join('')}</div>
-  <small>Qeyri-fiskal qəbz — rəsmi fiskal çek deyil.</small>
-  <div class="brand">Lavanda<sup>™</sup></div>
-  <div class="row2"><button class="btn gh" onclick="shareR('${s.id}')">📤 Paylaş</button><button class="btn gh" onclick="shareR('${s.id}',1)">💬 WhatsApp</button></div><br>
-  ${!fresh && !rt ? `<button class="btn gh" style="margin-bottom:10px" onclick="retModal('${s.id}')">↩ Məhsul qaytar</button>` : ''}
-  <button class="btn" onclick="closeModal()">${fresh ? 'Yeni satış' : 'Bağla'}</button>`);
+  const rt = s.ret, cr = s.method === 'credit', dv = s.method === 'delivery';
+  modal(`<h2>${fresh ? (rt ? '↩ Qaytarma tamamlandı' : dv ? '🚚 Sifariş qeydə alındı' : '✅ Satış tamamlandı') : (rt ? 'Qaytarma №' : 'Satış №') + (sales.indexOf(s) + 1)}</h2>
+  ${fresh && !dv ? `<div class="change">${rt ? 'Qaytarılacaq nağd: ' + money(s.cash) : cr ? 'Borca yazıldı: ' + money(s.debt) : 'Qaytarılacaq: ' + money(s.change)}</div>` : ''}
+  ${rcHtml(s)}
+  <div class="row2" style="margin-top:12px"><button class="btn gh" onclick="shareR('${s.id}')">📤 Paylaş</button><button class="btn gh" onclick="shareR('${s.id}',1)">💬 WhatsApp</button></div>
+  <button class="btn" style="margin-top:8px" onclick="printReceipt('${s.id}')">🖨 Çek çıxar</button>
+  ${!fresh && !rt ? `<button class="btn gh" style="margin-top:8px" onclick="retModal('${s.id}')">↩ Məhsul qaytar</button>` : ''}
+  <button class="btn gh" style="margin-top:8px" onclick="closeModal()">${fresh ? 'Yeni satış' : 'Bağla'}</button>`);
 }
 
 /* ---------- Barkod skaneri ---------- */
@@ -244,7 +258,7 @@ function rRep() {
   <button class="btn" style="margin-top:12px" onclick="dayEnd()">🌙 Günsonu (kassanı bağla)</button>
   <button class="btn gh" style="margin-top:8px" onclick="exportSales()">📥 Satışları CSV-yə yüklə</button>
   ${bySeller(l)}<h3>Satış tarixçəsi</h3>
-  ${l.slice(0, 100).map(s => `<div class="card item" onclick="showSale('${s.id}')"><div class="grow"><b>${dt(s.ts)}</b><small>${s.items.reduce((a, i) => a + i.qty, 0)} ədəd • ${esc(s.seller || '')}${s.method === 'credit' ? ' • nisyə' : ''}${s.ret ? ' • qaytarma' : ''}</small></div><b>${money(s.total)}</b></div>`).join('') || '<div class="empty">Bu dövrdə satış yoxdur</div>'}
+  ${l.slice(0, 100).map(s => `<div class="card item" onclick="showSale('${s.id}')"><div class="grow"><b>${dt(s.ts)}</b><small>${s.items.reduce((a, i) => a + i.qty, 0)} ədəd • ${esc(s.seller || '')}${s.method === 'credit' ? ' • nisyə' : ''}${s.ret ? ' • qaytarma' : ''}${s.method === 'delivery' ? ' • çatdırılma' : ''}</small></div><b>${money(s.total)}</b></div>`).join('') || '<div class="empty">Bu dövrdə satış yoxdur</div>'}
   ${l.length > 100 ? '<small>Son 100 satış göstərilir. Hamısı CSV-dədir.</small>' : ''}`;
 }
 function showSale(id) { receipt(sales.find(s => s.id === id), false); }
@@ -264,7 +278,7 @@ function exportSales() {
   const rows = [['Tarix', 'Satış №', 'Məhsul', 'Barkod', 'Say', 'Alış qiyməti', 'Satış qiyməti', 'Cəm', 'Təxmini qazanc', 'Satıcı', 'Ödəniş']];
   sales.filter(s => s.ts >= range(period)).sort((a, b) => a.ts - b.ts).forEach(s => {
     const no = sales.indexOf(s) + 1;
-    s.items.forEach(i => rows.push([dt(s.ts), no, i.name, i.barcode, i.qty, i.buy, i.sell, r2(i.sell * i.qty), r2((i.sell - i.buy) * i.qty), s.seller || '', s.ret ? 'Qaytarma' : s.method === 'credit' ? 'Nisyə' : 'Nağd']));
+    s.items.forEach(i => rows.push([dt(s.ts), no, i.name, i.barcode, i.qty, i.buy, i.sell, r2(i.sell * i.qty), r2((i.sell - i.buy) * i.qty), s.seller || '', s.ret ? 'Qaytarma' : s.method === 'delivery' ? 'Çatdırılma' : s.method === 'credit' ? 'Nisyə' : 'Nağd']));
   });
   if (rows.length < 2) return toast('Bu dövrdə satış yoxdur', 'err');
   dl(`satislar-${period}-${today()}.csv`, csv(rows), 'text/csv;charset=utf-8'); toast('CSV yükləndi', 'ok');
@@ -314,7 +328,7 @@ function rSet() {
   <div class="card"><h2>Modullar</h2>
   <div class="item"><div class="grow"><b>🧾 Rəsmi fiskal çek</b><small>Hələ qoşulmayıb. Qəbzlər qeyri-fiskaldır.</small></div><span class="badge wa">Qoşulmayıb</span></div><hr style="border:0;border-top:1px solid var(--ln)">
   <div class="item"><div class="grow"><b>💳 Bank kartı</b><small>Hələ qoşulmayıb. Yalnız nağd ödəniş.</small></div><span class="badge wa">Qoşulmayıb</span></div></div>
-  <p class="muted" style="text-align:center">Mağaza Kassası v1.4 • AZN</p>`;
+  <p class="muted" style="text-align:center">Mağaza Kassası v1.5 • AZN</p>`;
 }
 
 /* ---------- Satıcılar, PIN, nisyə ---------- */
@@ -411,10 +425,11 @@ function custDel(id) {
 /* ---------- Qaytarma, qəbz paylaşma, günsonu ---------- */
 let retQ = {}, dayD = {};
 const payLines = s => s.ret ? [['Qaytarılan nağd', s.cash], ...(s.debtCut ? [['Borcdan silindi', s.debtCut]] : [])]
+  : s.method === 'delivery' ? [[s.dlv.pay === 'cod' ? 'Kuryer alacaq' : 'Ödənilib (online)', s.total]]
   : s.method === 'credit' ? [['İndi ödənilən', s.paid], ['Borc: ' + (s.cname || ''), s.debt]] : [['Nağd', s.paid], ['Qaytarılan', s.change]];
 const rText = s => [`🧾 ${cfg.shop}${s.ret ? ' (QAYTARMA)' : ''}`, dt(s.ts) + (s.seller ? ' • ' + s.seller : ''), '──────────',
   ...s.items.map(i => `${i.name} ×${Math.abs(i.qty)} — ${money(i.sell * i.qty)}`), '──────────', `CƏMİ: ${money(s.total)}`,
-  ...payLines(s).map(([k, v]) => `${k}: ${money(v)}`), '', 'Qeyri-fiskal qəbz', 'Lavanda™'].join('\n');
+  ...payLines(s).map(([k, v]) => `${k}: ${money(v)}`), ...dvText(s), '', 'Qeyri-fiskal qəbz', 'Lavanda™'].join('\n');
 async function shareR(id, wa) {
   const t = rText(sales.find(x => x.id === id));
   if (!wa && navigator.share) { try { await navigator.share({ text: t }); } catch (e) { } return; }
@@ -440,7 +455,7 @@ function retDo(id) {
   const left = {}; s.items.forEach(i => { left[i.id] = i.qty; }); sales.filter(x => x.ref === id).forEach(r => r.items.forEach(i => { left[i.id] += i.qty; }));
   if (its.some(i => retQ[i.id] > left[i.id])) return toast('Qaytarma miqdarı satılandan çoxdur', 'err');
   const amt = r2(its.reduce((a, i) => a + i.sell * retQ[i.id], 0)), cut = s.method === 'credit' ? Math.min(amt, Math.max(0, bal(s.cid))) : 0;
-  const r = { id: uid(), ts: Date.now(), total: -amt, paid: 0, change: 0, method: 'return', ret: true, ref: id, seller: cfg.seller, cash: r2(amt - cut), debtCut: cut, cname: s.cname,
+  const r = { id: uid(), ts: Date.now(), total: -amt, paid: 0, change: 0, method: 'return', ret: true, ref: id, seller: cfg.seller, cash: s.method === 'delivery' ? 0 : r2(amt - cut), debtCut: cut, cname: s.cname,
     items: its.map(i => ({ id: i.id, name: i.name, barcode: i.barcode, qty: -retQ[i.id], buy: i.buy, sell: i.sell })) };
   const bak = JSON.stringify(products);
   its.forEach(i => { const p = products.find(x => x.id === i.id); if (p) p.stock += retQ[i.id]; });
@@ -453,9 +468,9 @@ function dayEnd() {
   const sum = (a, fn) => r2(a.reduce((x, y) => x + fn(y), 0)), last = (cfg.closings || []).slice(-1)[0];
   dayD = { ts: Date.now(), n: sl.length, rev: sum(l, s => s.total), prof: sum(l, s => sum(s.items, i => (i.sell - i.buy) * i.qty)),
     cashIn: sum(sl, s => s.paid - s.change), credit: sum(sl, s => s.debt || 0), debtPaid: sum(ledger.filter(e => e.ts >= f && e.type === 'pay' && !e.sid), e => e.amt),
-    refunds: sum(rt, s => s.cash), open: last ? last.counted : 0 };
+    refunds: sum(rt, s => s.cash), courier: sum(sales.filter(s => !s.ret && s.dlv && s.dlv.col >= f), s => s.total), open: last ? last.counted : 0 };
   const R = (k, v) => `<div><span>${k}</span><span>${v}</span></div>`, d = dayD;
-  modal(`<h2>🌙 Günsonu</h2><div class="rc">${R('Satış sayı', d.n)}${R('Dövriyyə (xalis)', money(d.rev))}${R('Təxmini qazanc', money(d.prof))}<hr>${R('Nağd satışlar', money(d.cashIn))}${R('Borc ödənişləri', money(d.debtPaid))}${R('Qaytarılan nağd', '−' + money(d.refunds))}${R('Nisyə verildi', money(d.credit))}</div>
+  modal(`<h2>🌙 Günsonu</h2><div class="rc">${R('Satış sayı', d.n)}${R('Dövriyyə (xalis)', money(d.rev))}${R('Təxmini qazanc', money(d.prof))}<hr>${R('Nağd satışlar', money(d.cashIn))}${R('Borc ödənişləri', money(d.debtPaid))}${R('Kuryerdən nağd', money(d.courier))}${R('Qaytarılan nağd', '−' + money(d.refunds))}${R('Nisyə verildi', money(d.credit))}</div>
   <label>Açılış kassası (₼)<input id="de-o" type="number" inputmode="decimal" step="0.01" value="${d.open}" oninput="deCalc()"></label>
   <label>Kassada faktiki nağd (₼)<input id="de-c" type="number" inputmode="decimal" step="0.01" oninput="deCalc()"></label>
   <div class="change" id="de-x"></div>
@@ -465,11 +480,11 @@ function dayEnd() {
 }
 function deCalc() {
   const d = dayD, o = r2(parseFloat($('#de-o').value)), c = parseFloat($('#de-c').value);
-  d.open = o; d.exp = r2(o + d.cashIn + d.debtPaid - d.refunds); d.counted = isNaN(c) ? null : r2(c); d.diff = d.counted == null ? null : r2(d.counted - d.exp);
+  d.open = o; d.exp = r2(o + d.cashIn + d.debtPaid + d.courier - d.refunds); d.counted = isNaN(c) ? null : r2(c); d.diff = d.counted == null ? null : r2(d.counted - d.exp);
   $('#de-x').textContent = 'Gözlənilən nağd: ' + money(d.exp) + (d.diff == null ? '' : ' • Fərq: ' + (d.diff > 0 ? '+' : '') + money(d.diff));
 }
 const deText = d => ['🌙 Günsonu — ' + cfg.shop, dt(d.ts), `Satış: ${d.n} • Dövriyyə: ${money(d.rev)}`, `Təxmini qazanc: ${money(d.prof)}`,
-  `Nağd satış: ${money(d.cashIn)} • Borc ödənişi: ${money(d.debtPaid)}`, `Qaytarma: ${money(d.refunds)} • Nisyə: ${money(d.credit)}`,
+  `Nağd satış: ${money(d.cashIn)} • Borc ödənişi: ${money(d.debtPaid)} • Kuryerdən: ${money(d.courier || 0)}`, `Qaytarma: ${money(d.refunds)} • Nisyə: ${money(d.credit)}`,
   `Açılış: ${money(d.open)} • Gözlənilən: ${money(d.exp)}`, d.counted == null ? '' : `Sayılan: ${money(d.counted)} • Fərq: ${money(d.diff)}`, '', 'Lavanda™'].join('\n');
 function deShare() { deCalc(); const t = deText(dayD); if (navigator.share) navigator.share({ text: t }).catch(() => { }); else open('https://wa.me/?text=' + encodeURIComponent(t), '_blank'); }
 function deSave() {
@@ -607,6 +622,106 @@ const licCard = () => { const s = LS || {};
   const t = s.ok === false ? 'Müddət bitib' : s.type === 'lic' ? `${esc(s.lic.n)} • ${esc(s.lic.p)} • ${s.left} gün qalıb (${dt(s.lic.e).slice(0, 10)}-ə qədər)` : s.type === 'grace' ? `Müddət bitib, güzəşt: ${s.left} gün` : s.type === 'trial' ? `Sınaq müddəti: ${s.left} gün qalıb` : 'Yoxlanılır…';
   return `<div class="card"><h2>🔑 Lisenziya</h2><small>${t}</small><br><br><button class="btn gh" onclick="licModal()">Açarı daxil et / yenilə</button></div>`; };
 if (document.addEventListener) document.addEventListener('visibilitychange', () => { if (!document.hidden) licInit(); });
+
+/* ---------- QR kod (öz kodum, kitabxanasız; bayt rejimi, düzəliş səviyyəsi L) ---------- */
+const QR = (() => {
+  const ECC = [7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28], BLK = [1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 6, 6, 6, 6, 7, 8];
+  const raw = v => { let r = (16 * v + 128) * v + 64; if (v >= 2) { const a = Math.floor(v / 7) + 2; r -= (25 * a - 10) * a - 55; if (v >= 7) r -= 36; } return r; };
+  const mul = (x, y) => { let z = 0; for (let i = 7; i >= 0; i--) { z = (z << 1) ^ ((z >>> 7) * 0x11D); z ^= ((y >>> i) & 1) * x; } return z; };
+  const gen = d => { const r = new Array(d).fill(0); r[d - 1] = 1; let root = 1; for (let i = 0; i < d; i++) { for (let j = 0; j < d; j++) { r[j] = mul(r[j], root); if (j + 1 < d) r[j] ^= r[j + 1]; } root = mul(root, 2); } return r; };
+  const rem = (data, g) => { const r = new Array(g.length).fill(0); for (const b of data) { const f = b ^ r.shift(); r.push(0); g.forEach((c, i) => { r[i] ^= mul(c, f); }); } return r; };
+  function make(text) {
+    const bytes = [...new TextEncoder().encode(text)];
+    let v = 1; for (; v <= 20; v++) if (bytes.length + 2 + (v > 9 ? 1 : 0) <= Math.floor(raw(v) / 8) - ECC[v - 1] * BLK[v - 1]) break;
+    if (v > 20) return null;
+    const nb = BLK[v - 1], el = ECC[v - 1], rw = Math.floor(raw(v) / 8), cap = rw - el * nb, bits = [];
+    const put = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >>> i) & 1); };
+    put(4, 4); put(bytes.length, v > 9 ? 16 : 8); bytes.forEach(b => put(b, 8)); put(0, Math.min(4, cap * 8 - bits.length));
+    while (bits.length % 8) bits.push(0);
+    const data = []; for (let i = 0; i < bits.length; i += 8) data.push(parseInt(bits.slice(i, i + 8).join(''), 2));
+    for (let p = 0xEC; data.length < cap; p ^= 0xEC ^ 0x11) data.push(p);
+    const ns = nb - rw % nb, sl = Math.floor(rw / nb), g = gen(el), blocks = [];
+    for (let i = 0, k = 0; i < nb; i++) { const dl = sl - el + (i < ns ? 0 : 1), d = data.slice(k, k + dl); k += dl; blocks.push({ d, e: rem(d, g) }); }
+    const out = []; for (let i = 0; i <= sl - el; i++) blocks.forEach(b => { if (i < b.d.length) out.push(b.d[i]); });
+    for (let i = 0; i < el; i++) blocks.forEach(b => out.push(b.e[i]));
+    const n = v * 4 + 17, M = Array.from({ length: n }, () => new Array(n).fill(false)), F = Array.from({ length: n }, () => new Array(n).fill(false));
+    const set = (x, y, b) => { M[y][x] = b; F[y][x] = true; };
+    for (let i = 0; i < n; i++) { set(6, i, i % 2 === 0); set(i, 6, i % 2 === 0); }
+    const finder = (x, y) => { for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) { const d = Math.max(Math.abs(dx), Math.abs(dy)), xx = x + dx, yy = y + dy; if (xx >= 0 && xx < n && yy >= 0 && yy < n) set(xx, yy, d !== 2 && d !== 4); } };
+    finder(3, 3); finder(n - 4, 3); finder(3, n - 4);
+    if (v > 1) {
+      const na = Math.floor(v / 7) + 2, st = Math.ceil((v * 4 + 4) / (na * 2 - 2)) * 2, pos = [6]; for (let p = n - 7; pos.length < na; p -= st) pos.splice(1, 0, p);
+      for (let i = 0; i < na; i++) for (let j = 0; j < na; j++) if (!((i === 0 && j === 0) || (i === 0 && j === na - 1) || (i === na - 1 && j === 0)))
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) set(pos[i] + dx, pos[j] + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+    }
+    const fmt = mask => {
+      const d = (1 << 3) | mask; let r = d; for (let i = 0; i < 10; i++) r = (r << 1) ^ ((r >>> 9) * 0x537);
+      const b = ((d << 10) | r) ^ 0x5412, q = i => ((b >>> i) & 1) === 1;
+      for (let i = 0; i < 6; i++) set(8, i, q(i)); set(8, 7, q(6)); set(8, 8, q(7)); set(7, 8, q(8)); for (let i = 9; i < 15; i++) set(14 - i, 8, q(i));
+      for (let i = 0; i < 8; i++) set(n - 1 - i, 8, q(i)); for (let i = 8; i < 15; i++) set(8, n - 15 + i, q(i)); set(8, n - 8, true);
+    };
+    if (v >= 7) { let r = v; for (let i = 0; i < 12; i++) r = (r << 1) ^ ((r >>> 11) * 0x1F25); const b = (v << 12) | r; for (let i = 0; i < 18; i++) { const c = ((b >>> i) & 1) === 1, a = n - 11 + i % 3, q = Math.floor(i / 3); set(a, q, c); set(q, a, c); } }
+    fmt(0);
+    let k = 0; for (let right = n - 1; right >= 1; right -= 2) { if (right === 6) right = 5; for (let vert = 0; vert < n; vert++) for (let j = 0; j < 2; j++) { const x = right - j, y = ((right + 1) & 2) === 0 ? n - 1 - vert : vert; if (!F[y][x] && k < out.length * 8) { M[y][x] = ((out[k >>> 3] >>> (7 - (k & 7))) & 1) === 1; k++; } } }
+    const mk = (m, x, y) => [(x + y) % 2 === 0, y % 2 === 0, x % 3 === 0, (x + y) % 3 === 0, (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0, x * y % 2 + x * y % 3 === 0, (x * y % 2 + x * y % 3) % 2 === 0, ((x + y) % 2 + x * y % 3) % 2 === 0][m];
+    const apply = m => { for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (!F[y][x] && mk(m, x, y)) M[y][x] = !M[y][x]; };
+    const pen = () => {
+      let p = 0, dark = 0;
+      for (let y = 0; y < n; y++) {
+        for (let t = 0; t < 2; t++) { let run = 1; for (let x = 1; x < n; x++) { if ((t ? M[x][y] : M[y][x]) === (t ? M[x - 1][y] : M[y][x - 1])) { run++; if (run === 5) p += 3; else if (run > 5) p++; } else run = 1; } }
+        for (let x = 0; x < n; x++) { if (M[y][x]) dark++; if (x && y && M[y][x] === M[y][x - 1] && M[y][x] === M[y - 1][x] && M[y][x] === M[y - 1][x - 1]) p += 3; }
+      }
+      return p + Math.max(0, Math.ceil(Math.abs(dark * 20 - n * n * 10) / (n * n)) - 1) * 10;
+    };
+    let best = 0, bp = 1e9; for (let m = 0; m < 8; m++) { apply(m); fmt(m); const p = pen(); if (p < bp) { bp = p; best = m; } apply(m); }
+    apply(best); fmt(best); return M;
+  }
+  const svg = text => {
+    const M = make(text); if (!M) return ''; const n = M.length, q = 3; let d = '';
+    M.forEach((row, y) => { let x = 0; while (x < n) { if (row[x]) { let e = x; while (e < n && row[e]) e++; d += `M${x + q} ${y + q}h${e - x}v1h-${e - x}z`; x = e; } else x++; } });
+    return `<svg viewBox="0 0 ${n + 2 * q} ${n + 2 * q}" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+  };
+  return { make, svg };
+})();
+
+/* ---------- Çatdırılma ---------- */
+let dPayMode = 'paid', dFilter = 'act';
+const DST = { new: 'Hazırlanır', out: 'Kuryerdə', done: 'Çatdırıldı', fail: 'Çatdırılmadı' }, DBG = { new: 'wa', out: 'wa', done: 'ok', fail: 'er' };
+const mapUrl = d => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(d.addr + (d.zip ? ' ' + d.zip : '') + ', Azerbaijan');
+const dvText = s => s.dlv ? ['', '📦 ÇATDIRILMA', s.dlv.name, s.dlv.phone, s.dlv.addr, s.dlv.zip ? 'Poçt indeksi: ' + s.dlv.zip : '',
+  s.dlv.pay === 'cod' ? 'Kuryer alacaq: ' + money(s.total) : 'Ödənilib (online)', 'Xəritə: ' + mapUrl(s.dlv)].filter((x, i) => i === 0 || x) : [];
+function rcHtml(s) {
+  const d = s.dlv;
+  return `<div class="rcp"><div class="rc"><div><span>${esc(cfg.shop)}</span><span>${dt(s.ts)}</span></div><div><span>Satıcı: ${esc(s.seller || '—')}</span></div><hr>
+  ${s.items.map(i => `<div><span>${esc(i.name)} ×${Math.abs(i.qty)}</span><span>${money(i.sell * i.qty)}</span></div>`).join('')}<hr>
+  <div><b>CƏMİ</b><b>${money(s.total)}</b></div>${payLines(s).map(([k, v]) => `<div><span>${esc(k)}</span><span>${money(v)}</span></div>`).join('')}</div>
+  ${d ? `<div class="dv"><b>📦 ÇATDIRILMA</b><div>${esc(d.name)}</div><div>${esc(d.phone)}</div><div>${esc(d.addr)}</div>${d.zip ? `<div>Poçt indeksi: <b style="display:inline">${esc(d.zip)}</b></div>` : ''}<div class="dpay">${d.pay === 'cod' ? 'KURYER ALACAQ: ' + money(s.total) : 'ÖDƏNİLİB (online)'}</div></div>` : ''}
+  <small>Qeyri-fiskal qəbz — rəsmi fiskal çek deyil.</small><div class="brand">Lavanda<sup>™</sup></div>
+  ${d ? `<div class="qr">${QR.svg(mapUrl(d)) || '<small>Ünvan QR üçün çox uzundur</small>'}<small>Ünvanı skan edin (xəritə)</small></div>` : ''}</div>`;
+}
+function printReceipt(id) { $('#prn').innerHTML = rcHtml(sales.find(x => x.id === id)); document.body.classList.add('prn'); setTimeout(() => print(), 80); }
+function setDF(v) { dFilter = v; dlvList(); }
+function dlvList() {
+  const all = sales.filter(s => s.dlv).sort((a, b) => b.ts - a.ts), l = dFilter === 'act' ? all.filter(s => s.dlv.st === 'new' || s.dlv.st === 'out') : all;
+  modal(`<h2>🚚 Çatdırılma</h2><div class="seg"><button class="${dFilter === 'act' ? 'on' : ''}" onclick="setDF('act')">Aktiv</button><button class="${dFilter === 'all' ? 'on' : ''}" onclick="setDF('all')">Hamısı</button></div>
+  ${l.slice(0, 50).map(s => `<div class="card item" onclick="dlvView('${s.id}')"><div class="grow"><b>${esc(s.dlv.name)}</b><small>${esc(s.dlv.addr)}</small></div><div class="r"><b>${money(s.total)}</b><br><span class="badge ${DBG[s.dlv.st]}">${DST[s.dlv.st]}</span></div></div>`).join('') || '<div class="empty">Sifariş yoxdur</div>'}
+  <br><button class="btn gh" onclick="closeModal()">Bağla</button>`);
+}
+function dlvView(id) {
+  const s = sales.find(x => x.id === id), d = s.dlv;
+  modal(`<h2>${esc(d.name)}</h2><span class="badge ${DBG[d.st]}">${DST[d.st]}</span>
+  <div class="rc" style="margin-top:10px"><div><span>Telefon</span><span>${esc(d.phone)}</span></div><div><span>Ünvan</span><span style="text-align:right">${esc(d.addr)}</span></div>${d.zip ? `<div><span>Poçt</span><span>${esc(d.zip)}</span></div>` : ''}
+  <div><span>Məbləğ</span><span>${money(s.total)}</span></div><div><span>Ödəniş</span><span>${d.pay === 'cod' ? 'Kuryer alacaq' : 'Ödənilib'}</span></div><hr>${s.items.map(i => `<div><span>${esc(i.name)} ×${i.qty}</span></div>`).join('')}</div>
+  <div class="row2"><button class="btn gh" onclick="dSet('${id}','out')">🚚 Kuryerdə</button><button class="btn gh" onclick="dSet('${id}','done')">✅ Çatdırıldı</button></div>
+  <button class="btn gh" style="margin-top:8px" onclick="dSet('${id}','fail')">✖ Çatdırıla bilmədi</button>
+  <div class="row2" style="margin-top:8px"><button class="btn" onclick="printReceipt('${id}')">🖨 Çek çıxar</button><button class="btn gh" onclick="shareR('${id}')">📤 Paylaş</button></div>
+  <small>Mal geri qayıdıbsa: Hesabat → satış → ↩ Məhsul qaytar (stok geri artır).</small><br><br><button class="btn gh" onclick="dlvList()">Geri</button>`);
+}
+function dSet(id, st) {
+  const d = sales.find(x => x.id === id).dlv; d.st = st;
+  if (st === 'done' && d.pay === 'cod') d.col = d.col || Date.now(); else delete d.col;
+  save(); toast(DST[st], 'ok'); dlvView(id);
+}
 
 /* ---------- Başlanğıc ---------- */
 function updNet() { const n = $('#net'); n.textContent = navigator.onLine ? 'Onlayn' : 'Offlayn'; n.classList.toggle('off', !navigator.onLine); }
