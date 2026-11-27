@@ -21,7 +21,7 @@
   <button data-v="set" onclick="go('set')"><i>⚙️</i>Parametrlər</button>
 </nav>
 <div id="paybar"><div><small>Cəmi</small><b id="tot">0,00 ₼</b></div><button id="pay" class="btn" onclick="payModal()" disabled>Ödənişə keç</button></div>
-</div>
+<div id="lbar"></div></div>
 <main>
   <section id="v-sell" class="view on">
     <div class="bar" style="margin-bottom:8px"><button id="sel" class="chip" onclick="sellerModal()"></button><button class="chip" onclick="custList()">📒 Nisyə dəftəri</button></div>
@@ -38,6 +38,7 @@
   <section id="v-set" class="view"></section>
 </main>
 <div id="scan"><video id="vid" playsinline muted></video><div class="frame"></div><div id="smsg"></div><div id="spanel"></div><button id="sx" onclick="closeScan()" aria-label="Bağla">✕</button></div>
+<div id="lock"></div>
 <div id="mdl" onclick="if(event.target===this)closeModal()"><div id="sheet"></div></div>
 <div id="tst"></div>
 <div id="prn"></div>

@@ -314,7 +314,7 @@ function rSet() {
   <div class="card"><h2>Modullar</h2>
   <div class="item"><div class="grow"><b>🧾 Rəsmi fiskal çek</b><small>Hələ qoşulmayıb. Qəbzlər qeyri-fiskaldır.</small></div><span class="badge wa">Qoşulmayıb</span></div><hr style="border:0;border-top:1px solid var(--ln)">
   <div class="item"><div class="grow"><b>💳 Bank kartı</b><small>Hələ qoşulmayıb. Yalnız nağd ödəniş.</small></div><span class="badge wa">Qoşulmayıb</span></div></div>
-  <p class="muted" style="text-align:center">Mağaza Kassası v1.3 • AZN</p>`;
+  <p class="muted" style="text-align:center">Mağaza Kassası v1.4 • AZN</p>`;
 }
 
 /* ---------- Satıcılar, PIN, nisyə ---------- */
@@ -367,7 +367,7 @@ async function pinSave() {
   cfg.pin = await hash(a); unlocked = true; save(); closeModal(); rSet(); toast('PIN təyin edildi', 'ok');
 }
 function pinOff() { if (confirm('PIN silinsin?')) { delete cfg.pin; save(); rSet(); } }
-const secCards = () => `<div class="card"><h2>📷 Skaner</h2><button class="btn gh" onclick="togConf()">Skanerdə təsdiq düyməsi: ${cfg.confirmScan !== false ? 'AÇIQ' : 'BAĞLI'}</button></div>
+const secCards = () => `${licCard()}<div class="card"><h2>📷 Skaner</h2><button class="btn gh" onclick="togConf()">Skanerdə təsdiq düyməsi: ${cfg.confirmScan !== false ? 'AÇIQ' : 'BAĞLI'}</button></div>
 <div class="card"><h2>🔒 PIN kod</h2><small>${cfg.pin ? 'Hesabat və Parametrlər PIN ilə qorunur.' : 'PIN təyin etsəniz, Hesabat və Parametrlərə yalnız PIN ilə girmək olar.'} Bu, təsadüfi girişin qarşısını alır, telefonun özünü qorumur. PIN ehtiyat nüsxəyə yazılmır.</small><br><br>
 <button class="btn" onclick="pinSet()">${cfg.pin ? 'PIN-i dəyiş' : 'PIN təyin et'}</button>${cfg.pin ? '<br><button class="btn gh" onclick="pinOff()">PIN-i sil</button>' : ''}</div>
 <div class="card"><h2>👤 Satıcılar</h2>${cfg.sellers.map((n, i) => `<div class="item" style="margin-bottom:8px"><div class="grow"><b>${esc(n)}</b></div><button class="btn gh" style="width:auto;padding:6px 14px" onclick="delSeller(${i})" aria-label="Sil">✕</button></div>`).join('')}
@@ -552,6 +552,62 @@ function showUpd() {
 }
 function doUpd() { if (cart.length && !confirm('Səbətdəki məhsullar silinəcək. Yenilənsin?')) return; location.reload(); }
 
+/* ---------- Lisenziya (abunəlik) ---------- */
+const SELLER = { contact: 'Əlaqə: Lavanda™ — nömrənizi buraya yazın' };
+const TRIAL = 14, GRACE = 3, DAY = 864e5;
+const PUB = {"kty": "EC", "crv": "P-256", "x": "yDDZQWLdIZdqHT-Nt6WVxA9K3kvKMUltihUVQLOSypw", "y": "wJ9i1P3iSZSHr_Q4KX_13vWg-WmnahpNrrQhhqVEzMM"};
+let LS = null, lockShown = false;
+const b64d = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+async function licParse(key) {
+  try {
+    const [v, p, s] = String(key).replace(/\s+/g, '').split('.'); if (v !== 'LK1' || !p || !s) return null;
+    const k = await crypto.subtle.importKey('jwk', PUB, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    if (!await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, k, b64d(s), new TextEncoder().encode(p))) return null;
+    return JSON.parse(new TextDecoder().decode(b64d(p)));
+  } catch (e) { return null; }
+}
+function nowT() { const n = Date.now(), m = +localStorage.getItem('mk_maxt') || 0, t = Math.max(n, m); if (t > m) localStorage.setItem('mk_maxt', t); return t; }
+async function licStatus() {
+  const t = nowT(), raw = localStorage.getItem('mk_lic'), lic = raw ? await licParse(raw) : null;
+  let tr = +localStorage.getItem('mk_trial'); if (!tr) { tr = t; localStorage.setItem('mk_trial', tr); }
+  if (lic) {
+    if (t <= lic.e) return { ok: true, type: 'lic', lic, left: Math.ceil((lic.e - t) / DAY) };
+    if (t <= lic.e + GRACE * DAY) return { ok: true, type: 'grace', lic, left: Math.ceil((lic.e + GRACE * DAY - t) / DAY) };
+    return { ok: false, lic };
+  }
+  const end = tr + TRIAL * DAY; return t <= end ? { ok: true, type: 'trial', left: Math.ceil((end - t) / DAY) } : { ok: false, lic: null };
+}
+function lockHtml() {
+  const l = LS.lic, skew = Date.now() < (+localStorage.getItem('mk_maxt') || 0) - DAY;
+  return `<div class="lk"><div class="brand">Lavanda<sup>™</sup></div><h2>${l ? 'Abunəlik müddəti bitib' : 'Sınaq müddəti bitib'}</h2>
+  <p class="muted">${l ? esc(l.n) + ' • bitmə tarixi: ' + dt(l.e).slice(0, 10) : 'Davam etmək üçün lisenziya açarı lazımdır.'}${skew ? '<br>⚠ Telefonun tarixi yanlış ola bilər, düzəldin.' : ''}</p>
+  <label style="text-align:left">Lisenziya açarı<textarea id="lk" rows="4" placeholder="LK1...."></textarea></label>
+  <button class="btn" onclick="licAct()">Aktivləşdir</button><br><button class="btn gh" onclick="backup()">💾 Məlumatlarımı yüklə (ehtiyat nüsxə)</button>
+  <p class="muted">Məlumatlarınız telefonda qalır və silinmir.<br>${esc(SELLER.contact)}</p></div>`;
+}
+async function licInit() {
+  LS = await licStatus();
+  $('#lock').classList.toggle('on', !LS.ok);
+  if (!LS.ok && !lockShown) { $('#lock').innerHTML = lockHtml(); lockShown = true; } else if (LS.ok) lockShown = false;
+  $('#lbar').textContent = LS.type === 'trial' ? `⏳ Sınaq müddəti: ${LS.left} gün qalıb` : LS.type === 'grace' ? `⚠ Abunəlik bitib, ${LS.left} gün sonra bağlanacaq` : (LS.type === 'lic' && LS.left <= 7) ? `⏰ Abunəlik ${LS.left} gün sonra bitir` : '';
+  if (view === 'set') rSet();
+}
+async function licAct() {
+  const k = $('#lk').value.replace(/\s+/g, ''), l = await licParse(k);
+  if (!l) return toast('Açar düzgün deyil', 'err');
+  if (Date.now() > l.e) return toast('Bu açarın müddəti bitib', 'err');
+  localStorage.setItem('mk_lic', k); localStorage.setItem('mk_maxt', Date.now());
+  closeModal(); lockShown = false; await licInit(); toast('Lisenziya aktivləşdi', 'ok');
+}
+function licModal() {
+  modal(`<h2>🔑 Lisenziya açarı</h2><label>Açarı yapışdırın<textarea id="lk" rows="5" placeholder="LK1...."></textarea></label>
+  <div class="row2"><button class="btn gh" onclick="closeModal()">Ləğv et</button><button class="btn" onclick="licAct()">Aktivləşdir</button></div>`);
+}
+const licCard = () => { const s = LS || {};
+  const t = s.ok === false ? 'Müddət bitib' : s.type === 'lic' ? `${esc(s.lic.n)} • ${esc(s.lic.p)} • ${s.left} gün qalıb (${dt(s.lic.e).slice(0, 10)}-ə qədər)` : s.type === 'grace' ? `Müddət bitib, güzəşt: ${s.left} gün` : s.type === 'trial' ? `Sınaq müddəti: ${s.left} gün qalıb` : 'Yoxlanılır…';
+  return `<div class="card"><h2>🔑 Lisenziya</h2><small>${t}</small><br><br><button class="btn gh" onclick="licModal()">Açarı daxil et / yenilə</button></div>`; };
+if (document.addEventListener) document.addEventListener('visibilitychange', () => { if (!document.hidden) licInit(); });
+
 /* ---------- Başlanğıc ---------- */
 function updNet() { const n = $('#net'); n.textContent = navigator.onLine ? 'Onlayn' : 'Offlayn'; n.classList.toggle('off', !navigator.onLine); }
 addEventListener('online', updNet); addEventListener('offline', updNet);
@@ -565,4 +621,4 @@ if ('serviceWorker' in navigator) {
   }).catch(() => { }));
 }
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(g => { persisted = g; if (view === 'set') rSet(); }).catch(() => { });
-applyCfg(); updNet(); go('sell');
+applyCfg(); updNet(); go('sell'); licInit();

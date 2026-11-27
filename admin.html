@@ -1,0 +1,26 @@
+<!DOCTYPE html><html lang="az"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Lisenziya yarat</title>
+<style>body{font:15px/1.4 system-ui,sans-serif;background:#f3f4fa;color:#14152b;margin:0 auto;padding:16px;max-width:520px}h1{font-size:20px}label{display:block;margin:12px 0 4px;font-size:13px;color:#6b6f8a}input,select,textarea{width:100%;font:inherit;padding:11px;border:1.5px solid #e6e7f2;border-radius:12px;background:#fff;box-sizing:border-box}button{width:100%;margin-top:12px;padding:13px;border:0;border-radius:12px;background:#3730a3;color:#fff;font:inherit;font-weight:600}button.g{background:#e8e9f7;color:#3730a3}small{color:#6b6f8a}</style></head><body>
+<h1>🔑 Lisenziya açarı yarat</h1><small>Gizli açar yalnız bu səhifəyə yapışdırılır, heç yerdə saxlanılmır. Səhifə bağlananda silinir.</small>
+<label>Gizli açar (GIZLI-ACAR.txt-dəki JSON)</label><textarea id="pk" rows="4"></textarea>
+<label>Mağaza adı</label><input id="n">
+<label>Plan</label><select id="pl"><option value="30|aylıq">Aylıq (30 gün)</option><option value="365|illik">İllik (365 gün)</option><option value="7|test">Test (7 gün)</option></select>
+<label>Cari bitmə tarixi (yenilənmə üçün; yeni müştəridirsə boş buraxın)</label><input id="cd" type="date">
+<button onclick="gen()">Açar yarat</button>
+<label>Açar</label><textarea id="out" rows="5" readonly></textarea><small id="info"></small>
+<button class="g" onclick="navigator.clipboard.writeText(document.getElementById('out').value)">📋 Kopyala</button>
+<button class="g" onclick="window.open('https://wa.me/?text='+encodeURIComponent('Lavanda™ lisenziya açarı:\n'+document.getElementById('out').value))">💬 WhatsApp ilə göndər</button>
+<script>
+const $=i=>document.getElementById(i),b64u=b=>btoa(String.fromCharCode(...b)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+async function gen(){
+  const n=$('n').value.trim(); if(!n)return alert('Mağaza adını yazın');
+  try{
+    const [d,p]=$('pl').value.split('|'),cd=$('cd').value,now=Date.now();
+    const e=Math.max(now,cd?new Date(cd+'T23:59:59').getTime():0)+ +d*864e5;
+    const pl=b64u(new TextEncoder().encode(JSON.stringify({n,p,e,i:now})));
+    const k=await crypto.subtle.importKey('jwk',JSON.parse($('pk').value),{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
+    const s=await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},k,new TextEncoder().encode(pl));
+    $('out').value='LK1.'+pl+'.'+b64u(new Uint8Array(s));
+    $('info').textContent=n+' • '+p+' • bitmə tarixi: '+new Date(e).toLocaleDateString('az');
+  }catch(x){alert('Xəta: gizli açar düzgün deyil və ya səhifə HTTPS ilə açılmayıb')}
+}
+</script></body></html>
