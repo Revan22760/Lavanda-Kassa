@@ -92,3 +92,6 @@ textarea{width:100%;font:inherit;font-size:13px;padding:12px;border:1.5px solid 
 .dv{border:.3mm solid #000;border-radius:2mm;padding:2mm;margin:2mm 0;font-size:3.7mm;line-height:1.35;color:#000}.dv b{display:block}.dv .dpay{font-weight:800;margin-top:1mm}
 .qr{text-align:center;margin:3mm 0 1mm}.qr svg{width:40mm;height:40mm}.qr small{display:block;color:#000}
 @media print{body.prn .brand{background:none;color:#000;-webkit-text-fill-color:#000}body.prn #prn{display:block}}
+.lyb{margin-bottom:12px}.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.wds{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}.wd{display:flex!important;align-items:center;margin:0!important;padding:6px 10px;background:#eef0ff;border-radius:99px;font-size:13px!important;color:var(--p)!important}
+.cl{max-height:48vh;overflow:auto;margin:10px 0}.cl .chk{margin:0;padding:9px 0;border-bottom:1px solid var(--ln);gap:8px}.cl .chk .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

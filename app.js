@@ -32,7 +32,7 @@ function save() {
 let tt;
 function toast(m, t = '') { const e = $('#tst'); e.textContent = m; e.className = 'on ' + t; clearTimeout(tt); tt = setTimeout(() => e.className = '', 2800); }
 function modal(h) { $('#sheet').innerHTML = h; $('#mdl').classList.add('on'); }
-function closeModal() { $('#mdl').classList.remove('on'); }
+function closeModal() { $('#mdl').classList.remove('on'); if (loy && (loy.cid || loy.use)) { loy = { cid: '', use: 0, ph: '', nf: false }; lastAdded = ''; if (view === 'sell') rCart(); } }
 function applyCfg() { $('#title').textContent = cfg.shop || 'Mağaza Kassası'; }
 
 /* ---------- Naviqasiya ---------- */
@@ -48,7 +48,7 @@ function go(v) {
 /* ---------- Satış ---------- */
 const byCode = c => products.find(p => p.barcode && p.barcode === c);
 const match = v => { v = v.toLowerCase(); return products.filter(p => p.name.toLowerCase().includes(v) || (p.barcode || '').includes(v)); };
-const total = () => r2(cart.reduce((s, i) => { const p = products.find(x => x.id === i.id); return s + (p ? p.sell * i.qty : 0); }, 0));
+const total = () => price().total;
 
 function addToCart(p) {
   const i = cart.find(x => x.id === p.id), q = i ? i.qty : 0;
@@ -67,7 +67,7 @@ function rCart() {
   const rows = cart.map(i => ({ i, p: products.find(x => x.id === i.id) })).filter(r => r.p);
   cart = rows.map(r => r.i);
   $('#cartl').innerHTML = rows.length
-    ? rows.map(({ i, p }) => `<div class="card item${p.id === lastAdded ? ' pop' : ''}"><div class="grow"><b>${esc(p.name)}</b><small>${money(p.sell)} × ${i.qty} = ${money(p.sell * i.qty)}</small></div><div class="qty"><button onclick="chg('${p.id}',-1)" aria-label="Azalt">−</button><span>${i.qty}</span><button onclick="chg('${p.id}',1)" aria-label="Artır">+</button></div></div>`).join('') +
+    ? rows.map(({ i, p }) => `<div class="card item${p.id === lastAdded ? ' pop' : ''}"><div class="grow"><b>${esc(p.name)}</b><small>${money(p.sell)} × ${i.qty} = ${money(p.sell * i.qty)}${promoTag(p, i.qty)}</small></div><div class="qty"><button onclick="chg('${p.id}',-1)" aria-label="Azalt">−</button><span>${i.qty}</span><button onclick="chg('${p.id}',1)" aria-label="Artır">+</button></div></div>`).join('') +
       '<button class="btn gh" style="margin-top:12px" onclick="clearCart()">Səbəti təmizlə</button>'
     : '<div class="empty">Səbət boşdur<br><small>Barkodu skan edin və ya məhsul axtarın</small></div>';
   $('#tot').textContent = money(total()); $('#pay').disabled = !rows.length; $('#sel').textContent = '👤 ' + cfg.seller; { const t = $('#tot'); t.classList.remove('bump'); void t.offsetWidth; t.classList.add('bump'); } rQs();
@@ -86,9 +86,10 @@ $('#q').onkeydown = e => { // USB/Bluetooth barkod oxuyucu da Enter ilə işləy
 
 function payModal(mode) {
   if (!cart.length) return;
+  if (!mode) loy = { cid: '', use: 0, ph: '', nf: false };
   payMode = mode || 'cash'; if (payMode === 'deliv') dPayMode = 'paid';
-  const t = total(), cr = payMode === 'credit', dv = payMode === 'deliv', cs = payMode === 'cash';
-  const amts = [...new Set([t, ...[5, 10, 20, 50, 100].map(n => Math.ceil(t / n) * n)])].filter(a => a >= t).slice(0, 4);
+  const P = price(), t = P.total, cr = payMode === 'credit', dv = payMode === 'deliv', cs = payMode === 'cash';
+  const ly = ptsOn() ? `<div class="lyb"><div class="bar"><input id="lp" type="tel" inputmode="tel" placeholder="⭐ Müştəri nömrəsi (sadiqlik)" value="${esc(loy.ph || '')}"><button class="ic" onclick="loyFind()" aria-label="Tap">🔍</button></div>${loyInfo(P)}</div>` : '';
   const body = dv
     ? `<label>Ad Soyad<input id="d-n" maxlength="60" oninput="calc()"></label>
     <label>Telefon<input id="d-p" type="tel" inputmode="tel" maxlength="20" oninput="calc()"></label>
@@ -96,13 +97,12 @@ function payModal(mode) {
     <label>Poçt indeksi<input id="d-z" maxlength="10" placeholder="AZ1000"></label>
     <div class="seg"><button id="d-pd" class="on" onclick="dPay('paid')">✅ Ödənilib</button><button id="d-pc" onclick="dPay('cod')">💵 Kuryer alacaq</button></div>`
     : cr
-      ? `${customers.length ? `<label>Müştəri<select id="cust" onchange="calc()"><option value="">Seçin…</option>${customers.map(c => `<option value="${c.id}"${c.id === selCust ? ' selected' : ''}>${esc(c.name)} (borc ${money(bal(c.id))})</option>`).join('')}</select></label>` : ''}
+      ? `${customers.length ? `<label>Müştəri (nisyə)<select id="cust" onchange="calc()"><option value="">Seçin…</option>${customers.map(c => `<option value="${c.id}"${c.id === selCust ? ' selected' : ''}>${esc(c.name)} (borc ${money(bal(c.id))})</option>`).join('')}</select></label>` : ''}
     <button class="btn gh" style="margin-bottom:12px" onclick="newCust('pay')">+ Yeni müştəri</button>
     <label>İndi ödənilən (₼, ixtiyari)<input id="rcv" type="number" inputmode="decimal" step="0.01" min="0" oninput="calc()"></label>`
-      : `<label>Alınan məbləğ (₼)<input id="rcv" type="number" inputmode="decimal" step="0.01" min="0" oninput="calc()"></label>
-    <div class="chips">${amts.map((a, k) => `<button onclick="setRcv(${a})">${k ? money(a) : 'Dəqiq'}</button>`).join('')}</div>`;
-  modal(`<h2>${dv ? 'Çatdırılma sifarişi' : 'Ödəniş'}</h2><div class="big">${money(t)}</div>
-  <div class="seg"><button class="${cs ? 'on' : ''}" onclick="payModal('cash')">💵 Nağd</button><button class="${cr ? 'on' : ''}" onclick="payModal('credit')">📒 Nisyə</button><button class="${dv ? 'on' : ''}" onclick="payModal('deliv')">🚚 Çatdırılma</button></div>
+      : `<label>Alınan məbləğ (₼)<input id="rcv" type="number" inputmode="decimal" step="0.01" min="0" oninput="calc()"></label><div class="chips" id="chips"></div>`;
+  modal(`<h2>${dv ? 'Çatdırılma sifarişi' : 'Ödəniş'}</h2><div class="big" id="bigt">${money(t)}</div><div class="muted" id="sumr" style="text-align:center;margin:-8px 0 10px"></div>
+  ${ly}<div class="seg"><button class="${cs ? 'on' : ''}" onclick="payModal('cash')">💵 Nağd</button><button class="${cr ? 'on' : ''}" onclick="payModal('credit')">📒 Nisyə</button><button class="${dv ? 'on' : ''}" onclick="payModal('deliv')">🚚 Çatdırılma</button></div>
   ${body}<div class="change" id="chv"></div>
   <div class="row2"><button class="btn gh" onclick="closeModal()">Ləğv et</button><button class="btn" id="ok" onclick="finish()" disabled>Təsdiqlə</button></div>`);
   calc();
@@ -110,7 +110,9 @@ function payModal(mode) {
 function dPay(m) { dPayMode = m; $('#d-pd').classList.toggle('on', m === 'paid'); $('#d-pc').classList.toggle('on', m === 'cod'); calc(); }
 function setRcv(a) { $('#rcv').value = a; calc(); }
 function calc() {
-  const t = total();
+  const P = price(), t = P.total, pd = r2(P.L.reduce((a, l) => a + l.d, 0));
+  $('#bigt').textContent = money(t);
+  $('#sumr').textContent = [pd ? 'Aksiya: −' + money(pd) : '', P.loy ? 'Sadiqlik: −' + money(P.loy) : ''].filter(Boolean).join(' • ');
   if (payMode === 'deliv') {
     $('#chv').textContent = (dPayMode === 'cod' ? 'Kuryer alacaq: ' : 'Ödənilib: ') + money(t);
     $('#ok').disabled = !($('#d-n').value.trim() && $('#d-p').value.trim() && $('#d-a').value.trim()); return;
@@ -120,35 +122,39 @@ function calc() {
     $('#chv').textContent = 'Borca yazılacaq: ' + money(t - v);
     $('#ok').disabled = !(c && c.value && v >= 0 && v < t); return;
   }
+  $('#chips').innerHTML = [...new Set([t, ...[5, 10, 20, 50, 100].map(n => Math.ceil(t / n) * n)])].filter(a => a >= t).slice(0, 4).map((a, k) => `<button onclick="setRcv(${a})">${k ? money(a) : 'Dəqiq'}</button>`).join('');
   const ok = v >= t;
   $('#chv').textContent = ok ? 'Qaytarılacaq: ' + money(v - t) : 'Çatışmayan: ' + money(t - v);
   $('#ok').disabled = !ok;
 }
 function finish() {
-  const t = total(), dv = payMode === 'deliv', cr = payMode === 'credit';
+  const P = price(), t = P.total, dv = payMode === 'deliv', cr = payMode === 'credit';
   const v = dv ? 0 : r2(parseFloat($('#rcv').value)), c = cr && customers.find(x => x.id === $('#cust').value);
   let d = null;
   if (dv) { d = { name: $('#d-n').value.trim(), phone: $('#d-p').value.trim(), addr: $('#d-a').value.trim(), zip: $('#d-z').value.trim(), pay: dPayMode, st: 'new' }; if (!d.name || !d.phone || !d.addr) return; }
   else if (v < 0 || (cr ? !(c && v < t) : v < t)) return;
   if (!cart.length) return;
   for (const i of cart) { const p = products.find(x => x.id === i.id); if (!p || p.stock < i.qty) return toast('Stok kifayət deyil: ' + (p ? p.name : ''), 'err'); }
-  const s = { id: uid(), ts: Date.now(), total: t, paid: v, change: (cr || dv) ? 0 : r2(v - t), method: dv ? 'delivery' : cr ? 'credit' : 'cash', seller: cfg.seller,
-    items: cart.map(i => { const p = products.find(x => x.id === i.id); return { id: p.id, name: p.name, barcode: p.barcode, qty: i.qty, buy: p.buy, sell: p.sell }; }) };
+  const items = P.L.map(l => ({ id: l.p.id, name: l.p.name, barcode: l.p.barcode, qty: l.qty, buy: l.p.buy, sell: l.p.sell, d: l.d }));
+  if (P.loy > 0) { let rest = P.loy; items.forEach((it, k) => { const sh = k === items.length - 1 ? rest : Math.min(rest, r2(P.loy * (it.sell * it.qty - it.d) / P.sub)); it.d = r2(it.d + sh); rest = r2(rest - sh); }); }
+  const s = { id: uid(), ts: Date.now(), total: t, paid: v, change: (cr || dv) ? 0 : r2(v - t), method: dv ? 'delivery' : cr ? 'credit' : 'cash', seller: cfg.seller, items };
   if (cr) { s.cid = c.id; s.cname = c.name; s.debt = r2(t - v); }
   if (dv) s.dlv = d;
+  const pts0 = P.c ? P.c.pts || 0 : 0;
+  if (P.c) { s.lc = P.c.id; s.pu = P.use; s.pe = Math.floor(t * PE()); P.c.pts = pts0 - P.use + s.pe; }
   const bak = JSON.stringify(products);
   cart.forEach(i => { products.find(x => x.id === i.id).stock -= i.qty; });
   sales.push(s);
   if (cr) ledger.push({ id: uid(), cid: c.id, ts: s.ts, amt: s.debt, type: 'debt', sid: s.id });
-  if (!save()) { products = JSON.parse(bak); sales.pop(); if (cr) ledger.pop(); return; }
-  cart = []; selCust = ''; rCart(); receipt(s, true);
+  if (!save()) { products = JSON.parse(bak); sales.pop(); if (cr) ledger.pop(); if (P.c) P.c.pts = pts0; return; }
+  cart = []; selCust = ''; loy = { cid: '', use: 0, ph: '', nf: false }; rCart(); receipt(s, true);
 }
 function receipt(s, fresh) {
   const rt = s.ret, cr = s.method === 'credit', dv = s.method === 'delivery';
   modal(`<h2>${fresh ? (rt ? '↩ Qaytarma tamamlandı' : dv ? '🚚 Sifariş qeydə alındı' : '✅ Satış tamamlandı') : (rt ? 'Qaytarma №' : 'Satış №') + (sales.indexOf(s) + 1)}</h2>
   ${fresh && !dv ? `<div class="change">${rt ? 'Qaytarılacaq nağd: ' + money(s.cash) : cr ? 'Borca yazıldı: ' + money(s.debt) : 'Qaytarılacaq: ' + money(s.change)}</div>` : ''}
   ${rcHtml(s)}
-  <div class="row2" style="margin-top:12px"><button class="btn gh" onclick="shareR('${s.id}')">📤 Paylaş</button><button class="btn gh" onclick="shareR('${s.id}',1)">💬 WhatsApp</button></div>
+  <div class="row3" style="margin-top:12px"><button class="btn gh" onclick="shareImg('${s.id}')">🖼 Şəkil</button><button class="btn gh" onclick="shareR('${s.id}')">📤 Mətn</button><button class="btn gh" onclick="shareR('${s.id}',1)">💬 WA</button></div>
   <button class="btn" style="margin-top:8px" onclick="printReceipt('${s.id}')">🖨 Çek çıxar</button>
   ${!fresh && !rt ? `<button class="btn gh" style="margin-top:8px" onclick="retModal('${s.id}')">↩ Məhsul qaytar</button>` : ''}
   <button class="btn gh" style="margin-top:8px" onclick="closeModal()">${fresh ? 'Yeni satış' : 'Bağla'}</button>`);
@@ -250,7 +256,7 @@ function setP(k) { period = k; rRep(); }
 function rRep() {
   const l = sales.filter(s => s.ts >= range(period)).sort((a, b) => b.ts - a.ts);
   const sum = (a, f) => r2(a.reduce((x, y) => x + f(y), 0));
-  const rev = sum(l, s => s.total), pr = sum(l, s => sum(s.items, i => (i.sell - i.buy) * i.qty)), n = sum(l, s => sum(s.items, i => i.qty));
+  const rev = sum(l, s => s.total), pr = sum(l, s => sum(s.items, i => (i.sell - i.buy) * i.qty - (i.d || 0))), n = sum(l, s => sum(s.items, i => i.qty));
   $('#v-rep').innerHTML = `<div class="seg">${[['day', 'Gün'], ['week', 'Həftə'], ['month', 'Ay'], ['all', 'Hamısı']].map(([k, t]) => `<button class="${period === k ? 'on' : ''}" onclick="setP('${k}')">${t}</button>`).join('')}</div>
   <div class="grid"><div class="stat hi"><small>Dövriyyə</small><b>${money(rev)}</b></div>
   <div class="stat"><small>Təxmini qazanc</small><b>${money(pr)}</b></div><div class="stat"><small>Satış sayı</small><b>${l.filter(s => !s.ret).length}</b></div>
@@ -278,7 +284,7 @@ function exportSales() {
   const rows = [['Tarix', 'Satış №', 'Məhsul', 'Barkod', 'Say', 'Alış qiyməti', 'Satış qiyməti', 'Cəm', 'Təxmini qazanc', 'Satıcı', 'Ödəniş']];
   sales.filter(s => s.ts >= range(period)).sort((a, b) => a.ts - b.ts).forEach(s => {
     const no = sales.indexOf(s) + 1;
-    s.items.forEach(i => rows.push([dt(s.ts), no, i.name, i.barcode, i.qty, i.buy, i.sell, r2(i.sell * i.qty), r2((i.sell - i.buy) * i.qty), s.seller || '', s.ret ? 'Qaytarma' : s.method === 'delivery' ? 'Çatdırılma' : s.method === 'credit' ? 'Nisyə' : 'Nağd']));
+    s.items.forEach(i => rows.push([dt(s.ts), no, i.name, i.barcode, i.qty, i.buy, i.sell, r2(i.sell * i.qty - (i.d || 0)), r2((i.sell - i.buy) * i.qty - (i.d || 0)), s.seller || '', s.ret ? 'Qaytarma' : s.method === 'delivery' ? 'Çatdırılma' : s.method === 'credit' ? 'Nisyə' : 'Nağd']));
   });
   if (rows.length < 2) return toast('Bu dövrdə satış yoxdur', 'err');
   dl(`satislar-${period}-${today()}.csv`, csv(rows), 'text/csv;charset=utf-8'); toast('CSV yükləndi', 'ok');
@@ -313,11 +319,11 @@ function wipe() {
 }
 
 /* ---------- Parametrlər ---------- */
-function saveShop() { cfg.shop = $('#shop').value.trim() || 'Mağaza Kassası'; save(); applyCfg(); toast('Yadda saxlanıldı', 'ok'); }
+function saveShop() { cfg.phone = $('#shop-p').value.trim(); cfg.shop = $('#shop').value.trim() || 'Mağaza Kassası'; save(); applyCfg(); toast('Yadda saxlanıldı', 'ok'); }
 function install() { if (dp) { dp.prompt(); dp = null; rSet(); } }
 function rSet() {
   const bk = +localStorage.getItem(K.b);
-  $('#v-set').innerHTML = `<div class="card"><h2>Mağaza</h2><label>Mağaza adı<input id="shop" value="${esc(cfg.shop)}"></label><button class="btn" onclick="saveShop()">Yadda saxla</button></div>
+  $('#v-set').innerHTML = `<div class="card"><h2>Mağaza</h2><label>Mağaza adı<input id="shop" value="${esc(cfg.shop)}"></label><label>Telefon (çekdə və kataloqda)<input id="shop-p" type="tel" value="${esc(cfg.phone || '')}"></label><button class="btn" onclick="saveShop()">Yadda saxla</button></div>
   <div class="card"><h2>Məlumatlar</h2><small>${products.length} məhsul, ${sales.length} satış<br>Son ehtiyat nüsxə: ${bk ? dt(bk) : '<b style="color:var(--er)">hələ çıxarılmayıb</b>'}<br>Daimi yaddaş: ${persisted ? 'aktiv' : 'brauzerin ixtiyarındadır'}</small><br><br>
   <button class="btn" onclick="backup()">💾 Ehtiyat nüsxə çıxar (JSON)</button><br>
   <label class="btn gh" style="text-align:center;margin:0 0 12px;font-size:15px;color:var(--p)">📂 Nüsxədən bərpa et<input type="file" accept=".json,application/json" hidden onchange="restore(event)"></label>
@@ -328,7 +334,7 @@ function rSet() {
   <div class="card"><h2>Modullar</h2>
   <div class="item"><div class="grow"><b>🧾 Rəsmi fiskal çek</b><small>Hələ qoşulmayıb. Qəbzlər qeyri-fiskaldır.</small></div><span class="badge wa">Qoşulmayıb</span></div><hr style="border:0;border-top:1px solid var(--ln)">
   <div class="item"><div class="grow"><b>💳 Bank kartı</b><small>Hələ qoşulmayıb. Yalnız nağd ödəniş.</small></div><span class="badge wa">Qoşulmayıb</span></div></div>
-  <p class="muted" style="text-align:center">Mağaza Kassası v1.5 • AZN</p>`;
+  <p class="muted" style="text-align:center">Mağaza Kassası v1.6 • AZN</p>`;
 }
 
 /* ---------- Satıcılar, PIN, nisyə ---------- */
@@ -381,7 +387,7 @@ async function pinSave() {
   cfg.pin = await hash(a); unlocked = true; save(); closeModal(); rSet(); toast('PIN təyin edildi', 'ok');
 }
 function pinOff() { if (confirm('PIN silinsin?')) { delete cfg.pin; save(); rSet(); } }
-const secCards = () => `${licCard()}<div class="card"><h2>📷 Skaner</h2><button class="btn gh" onclick="togConf()">Skanerdə təsdiq düyməsi: ${cfg.confirmScan !== false ? 'AÇIQ' : 'BAĞLI'}</button></div>
+const secCards = () => `${licCard()}${promoCard()}${loyCard()}<div class="card"><h2>📷 Skaner</h2><button class="btn gh" onclick="togConf()">Skanerdə təsdiq düyməsi: ${cfg.confirmScan !== false ? 'AÇIQ' : 'BAĞLI'}</button></div>
 <div class="card"><h2>🔒 PIN kod</h2><small>${cfg.pin ? 'Hesabat və Parametrlər PIN ilə qorunur.' : 'PIN təyin etsəniz, Hesabat və Parametrlərə yalnız PIN ilə girmək olar.'} Bu, təsadüfi girişin qarşısını alır, telefonun özünü qorumur. PIN ehtiyat nüsxəyə yazılmır.</small><br><br>
 <button class="btn" onclick="pinSet()">${cfg.pin ? 'PIN-i dəyiş' : 'PIN təyin et'}</button>${cfg.pin ? '<br><button class="btn gh" onclick="pinOff()">PIN-i sil</button>' : ''}</div>
 <div class="card"><h2>👤 Satıcılar</h2>${cfg.sellers.map((n, i) => `<div class="item" style="margin-bottom:8px"><div class="grow"><b>${esc(n)}</b></div><button class="btn gh" style="width:auto;padding:6px 14px" onclick="delSeller(${i})" aria-label="Sil">✕</button></div>`).join('')}
@@ -394,18 +400,18 @@ function custList() {
   <br><div class="row2"><button class="btn gh" onclick="closeModal()">Bağla</button><button class="btn" onclick="newCust()">+ Yeni müştəri</button></div>`);
 }
 function newCust(ctx) {
-  modal(`<h2>Yeni müştəri</h2><label>Ad<input id="c-n" maxlength="40"></label><label>Telefon (ixtiyari)<input id="c-p" type="tel" inputmode="tel" maxlength="20"></label>
-  <div class="row2"><button class="btn gh" onclick="${ctx ? "payModal('credit')" : 'custList()'}">Geri</button><button class="btn" onclick="saveCust('${ctx || ''}')">Yadda saxla</button></div>`);
+  modal(`<h2>Yeni müştəri</h2><label>Ad<input id="c-n" maxlength="40"></label><label>Telefon (ixtiyari)<input id="c-p" type="tel" inputmode="tel" maxlength="20" value="${esc(newPhone)}"></label>
+  <div class="row2"><button class="btn gh" onclick="${ctx === 'loy' ? 'payModal(payMode)' : ctx ? "payModal('credit')" : 'custList()'}">Geri</button><button class="btn" onclick="saveCust('${ctx || ''}')">Yadda saxla</button></div>`);
 }
 function saveCust(ctx) {
   const n = $('#c-n').value.trim(); if (!n) return toast('Adı yazın', 'err');
   const c = { id: uid(), name: n, phone: $('#c-p').value.trim() }; customers.push(c);
   if (!save()) { customers.pop(); return; }
-  toast('Müştəri əlavə olundu', 'ok'); if (ctx) { selCust = c.id; payModal('credit'); } else custList();
+  toast('Müştəri əlavə olundu', 'ok'); newPhone = ''; if (ctx === 'loy') { loy.cid = c.id; loy.nf = false; payModal(payMode); } else if (ctx) { selCust = c.id; payModal('credit'); } else custList();
 }
 function custView(id) {
   const c = customers.find(x => x.id === id), b = bal(id), es = ledger.filter(e => e.cid === id).sort((x, y) => y.ts - x.ts);
-  modal(`<h2>${esc(c.name)}</h2><small>${esc(c.phone || '')}</small><div class="big" style="color:var(${b > 0 ? '--er' : '--ok'})">${money(b)}</div>
+  modal(`<h2>${esc(c.name)}</h2><small>${esc(c.phone || '')} • ⭐ ${c.pts || 0} xal</small><div class="big" style="color:var(${b > 0 ? '--er' : '--ok'})">${money(b)}</div>
   ${b > 0 ? `<label>Ödəniş məbləği (₼)<input id="cp" type="number" inputmode="decimal" step="0.01" min="0" value="${b}"></label><button class="btn" onclick="custPay('${id}')">💵 Ödəniş qəbul et</button><br>` : ''}
   <div class="rc">${es.slice(0, 30).map(e => `<div><span>${dt(e.ts)} ${e.type === 'debt' ? 'borc' : 'ödəniş'}</span><span>${e.type === 'debt' ? '+' : '−'}${money(e.amt)}</span></div>`).join('')}</div>
   <div class="row2"><button class="btn gh" onclick="custList()">Geri</button>${b === 0 ? `<button class="btn er" onclick="custDel('${id}')">Sil</button>` : '<span></span>'}</div>`);
@@ -428,7 +434,7 @@ const payLines = s => s.ret ? [['Qaytarılan nağd', s.cash], ...(s.debtCut ? [[
   : s.method === 'delivery' ? [[s.dlv.pay === 'cod' ? 'Kuryer alacaq' : 'Ödənilib (online)', s.total]]
   : s.method === 'credit' ? [['İndi ödənilən', s.paid], ['Borc: ' + (s.cname || ''), s.debt]] : [['Nağd', s.paid], ['Qaytarılan', s.change]];
 const rText = s => [`🧾 ${cfg.shop}${s.ret ? ' (QAYTARMA)' : ''}`, dt(s.ts) + (s.seller ? ' • ' + s.seller : ''), '──────────',
-  ...s.items.map(i => `${i.name} ×${Math.abs(i.qty)} — ${money(i.sell * i.qty)}`), '──────────', `CƏMİ: ${money(s.total)}`,
+  ...s.items.map(i => `${i.name} ×${Math.abs(i.qty)} — ${money(i.sell * i.qty)}`), '──────────', ...(dsum(s) ? ['Endirim: ' + money(-dsum(s))] : []), `CƏMİ: ${money(s.total)}`, ...(s.pe ? ['⭐ Qazanılan xal: +' + s.pe] : []),
   ...payLines(s).map(([k, v]) => `${k}: ${money(v)}`), ...dvText(s), '', 'Qeyri-fiskal qəbz', 'Lavanda™'].join('\n');
 async function shareR(id, wa) {
   const t = rText(sales.find(x => x.id === id));
@@ -441,32 +447,34 @@ function retModal(id) {
   const rows = s.items.map(i => ({ i, max: i.qty - (done[i.id] || 0) })).filter(r => r.max > 0);
   if (!rows.length) return toast('Bütün məhsullar artıq qaytarılıb', 'err');
   retQ = {};
-  modal(`<h2>↩ Məhsul qaytarma</h2>${rows.map(({ i, max }) => `<div class="card item"><div class="grow"><b>${esc(i.name)}</b><small>${money(i.sell)} • maks. ${max}</small></div><div class="qty"><button onclick="retChg('${id}','${i.id}',-1,${max})">−</button><span id="rq-${i.id}">0</span><button onclick="retChg('${id}','${i.id}',1,${max})">+</button></div></div>`).join('')}
+  modal(`<h2>↩ Məhsul qaytarma</h2>${rows.map(({ i, max }) => `<div class="card item"><div class="grow"><b>${esc(i.name)}</b><small>${money((i.sell * i.qty - (i.d || 0)) / i.qty)} • maks. ${max}</small></div><div class="qty"><button onclick="retChg('${id}','${i.id}',-1,${max})">−</button><span id="rq-${i.id}">0</span><button onclick="retChg('${id}','${i.id}',1,${max})">+</button></div></div>`).join('')}
   <div class="change" id="rtot" style="margin-top:12px">Qaytarılacaq: ${money(0)}</div>
   <div class="row2"><button class="btn gh" onclick="showSale('${id}')">Geri</button><button class="btn" onclick="retDo('${id}')">Təsdiqlə</button></div>`);
 }
 function retChg(id, pid, d, max) {
   retQ[pid] = Math.min(max, Math.max(0, (retQ[pid] || 0) + d)); $('#rq-' + pid).textContent = retQ[pid];
-  const s = sales.find(x => x.id === id); $('#rtot').textContent = 'Qaytarılacaq: ' + money(s.items.reduce((a, i) => a + i.sell * (retQ[i.id] || 0), 0));
+  const s = sales.find(x => x.id === id); $('#rtot').textContent = 'Qaytarılacaq: ' + money(s.items.reduce((a, i) => a + (i.sell * i.qty - (i.d || 0)) / i.qty * (retQ[i.id] || 0), 0));
 }
 function retDo(id) {
   const s = sales.find(x => x.id === id), its = s.items.filter(i => retQ[i.id] > 0);
   if (!its.length) return toast('Qaytarılacaq məhsulu seçin', 'err');
   const left = {}; s.items.forEach(i => { left[i.id] = i.qty; }); sales.filter(x => x.ref === id).forEach(r => r.items.forEach(i => { left[i.id] += i.qty; }));
   if (its.some(i => retQ[i.id] > left[i.id])) return toast('Qaytarma miqdarı satılandan çoxdur', 'err');
-  const amt = r2(its.reduce((a, i) => a + i.sell * retQ[i.id], 0)), cut = s.method === 'credit' ? Math.min(amt, Math.max(0, bal(s.cid))) : 0;
+  const amt = r2(its.reduce((a, i) => a + (i.sell * i.qty - (i.d || 0)) / i.qty * retQ[i.id], 0)), cut = s.method === 'credit' ? Math.min(amt, Math.max(0, bal(s.cid))) : 0;
   const r = { id: uid(), ts: Date.now(), total: -amt, paid: 0, change: 0, method: 'return', ret: true, ref: id, seller: cfg.seller, cash: s.method === 'delivery' ? 0 : r2(amt - cut), debtCut: cut, cname: s.cname,
-    items: its.map(i => ({ id: i.id, name: i.name, barcode: i.barcode, qty: -retQ[i.id], buy: i.buy, sell: i.sell })) };
+    items: its.map(i => ({ id: i.id, name: i.name, barcode: i.barcode, qty: -retQ[i.id], buy: i.buy, sell: i.sell, d: -r2((i.d || 0) / i.qty * retQ[i.id]) })) };
   const bak = JSON.stringify(products);
   its.forEach(i => { const p = products.find(x => x.id === i.id); if (p) p.stock += retQ[i.id]; });
   sales.push(r); if (cut) ledger.push({ id: uid(), cid: s.cid, ts: r.ts, amt: cut, type: 'pay', sid: r.id });
-  if (!save()) { products = JSON.parse(bak); sales.pop(); if (cut) ledger.pop(); return; }
+  const cu = s.lc && customers.find(x => x.id === s.lc), pts0 = cu ? cu.pts || 0 : 0;
+  if (cu) { const f = s.total ? amt / s.total : 0; cu.pts = Math.max(0, pts0 + Math.round((s.pu || 0) * f) - Math.round((s.pe || 0) * f)); }
+  if (!save()) { products = JSON.parse(bak); sales.pop(); if (cut) ledger.pop(); if (cu) cu.pts = pts0; return; }
   rRep(); receipt(r, true);
 }
 function dayEnd() {
   const f = range('day'), l = sales.filter(s => s.ts >= f), sl = l.filter(s => !s.ret), rt = l.filter(s => s.ret);
   const sum = (a, fn) => r2(a.reduce((x, y) => x + fn(y), 0)), last = (cfg.closings || []).slice(-1)[0];
-  dayD = { ts: Date.now(), n: sl.length, rev: sum(l, s => s.total), prof: sum(l, s => sum(s.items, i => (i.sell - i.buy) * i.qty)),
+  dayD = { ts: Date.now(), n: sl.length, rev: sum(l, s => s.total), prof: sum(l, s => sum(s.items, i => (i.sell - i.buy) * i.qty - (i.d || 0))),
     cashIn: sum(sl, s => s.paid - s.change), credit: sum(sl, s => s.debt || 0), debtPaid: sum(ledger.filter(e => e.ts >= f && e.type === 'pay' && !e.sid), e => e.amt),
     refunds: sum(rt, s => s.cash), courier: sum(sales.filter(s => !s.ret && s.dlv && s.dlv.col >= f), s => s.total), open: last ? last.counted : 0 };
   const R = (k, v) => `<div><span>${k}</span><span>${v}</span></div>`, d = dayD;
@@ -499,7 +507,7 @@ function pickImg(e) {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
   const im = new Image(), u = URL.createObjectURL(f);
   im.onload = () => {
-    const c = document.createElement('canvas'), S = 160, m = Math.min(im.width, im.height); c.width = c.height = S;
+    const c = document.createElement('canvas'), S = 220, m = Math.min(im.width, im.height); c.width = c.height = S;
     c.getContext('2d').drawImage(im, (im.width - m) / 2, (im.height - m) / 2, m, m, 0, 0, S, S);
     formImg = c.toDataURL('image/jpeg', 0.72); URL.revokeObjectURL(u); $('#f-th').innerHTML = `<img src="${formImg}" alt="">`;
   };
@@ -691,10 +699,11 @@ const mapUrl = d => 'https://www.google.com/maps/search/?api=1&query=' + encodeU
 const dvText = s => s.dlv ? ['', '📦 ÇATDIRILMA', s.dlv.name, s.dlv.phone, s.dlv.addr, s.dlv.zip ? 'Poçt indeksi: ' + s.dlv.zip : '',
   s.dlv.pay === 'cod' ? 'Kuryer alacaq: ' + money(s.total) : 'Ödənilib (online)', 'Xəritə: ' + mapUrl(s.dlv)].filter((x, i) => i === 0 || x) : [];
 function rcHtml(s) {
-  const d = s.dlv;
-  return `<div class="rcp"><div class="rc"><div><span>${esc(cfg.shop)}</span><span>${dt(s.ts)}</span></div><div><span>Satıcı: ${esc(s.seller || '—')}</span></div><hr>
+  const d = s.dlv, D = dsum(s);
+  return `<div class="rcp"><div class="rc"><div><span>${esc(cfg.shop)}</span><span>${dt(s.ts)}</span></div>${cfg.phone ? `<div><span>${esc(cfg.phone)}</span></div>` : ''}<div><span>Satıcı: ${esc(s.seller || '—')}</span></div><hr>
   ${s.items.map(i => `<div><span>${esc(i.name)} ×${Math.abs(i.qty)}</span><span>${money(i.sell * i.qty)}</span></div>`).join('')}<hr>
-  <div><b>CƏMİ</b><b>${money(s.total)}</b></div>${payLines(s).map(([k, v]) => `<div><span>${esc(k)}</span><span>${money(v)}</span></div>`).join('')}</div>
+  ${D ? `<div><span>Endirim</span><span>${money(-D)}</span></div>` : ''}<div><b>CƏMİ</b><b>${money(s.total)}</b></div>${payLines(s).map(([k, v]) => `<div><span>${esc(k)}</span><span>${money(v)}</span></div>`).join('')}
+  ${s.pe ? `<div><span>⭐ Qazanılan xal</span><span>+${s.pe}</span></div>` : ''}${s.pu ? `<div><span>⭐ İşlədilən xal</span><span>−${s.pu}</span></div>` : ''}</div>
   ${d ? `<div class="dv"><b>📦 ÇATDIRILMA</b><div>${esc(d.name)}</div><div>${esc(d.phone)}</div><div>${esc(d.addr)}</div>${d.zip ? `<div>Poçt indeksi: <b style="display:inline">${esc(d.zip)}</b></div>` : ''}<div class="dpay">${d.pay === 'cod' ? 'KURYER ALACAQ: ' + money(s.total) : 'ÖDƏNİLİB (online)'}</div></div>` : ''}
   <small>Qeyri-fiskal qəbz — rəsmi fiskal çek deyil.</small><div class="brand">Lavanda<sup>™</sup></div>
   ${d ? `<div class="qr">${QR.svg(mapUrl(d)) || '<small>Ünvan QR üçün çox uzundur</small>'}<small>Ünvanı skan edin (xəritə)</small></div>` : ''}</div>`;
@@ -721,6 +730,156 @@ function dSet(id, st) {
   const d = sales.find(x => x.id === id).dlv; d.st = st;
   if (st === 'done' && d.pay === 'cod') d.col = d.col || Date.now(); else delete d.col;
   save(); toast(DST[st], 'ok'); dlvView(id);
+}
+
+/* ---------- Aksiya, sadiqlik, kataloq, sifariş, şəkil çek, səs ---------- */
+let loy = { cid: '', use: 0, ph: '', nf: false }, newPhone = '';
+const PV = () => cfg.ptVal ?? 0.01, PE = () => cfg.ptEarn ?? 1, ptsOn = () => PE() > 0 || PV() > 0;
+const dg = s => String(s || '').replace(/\D/g, '').slice(-9);
+const dsum = s => r2(s.items.reduce((a, i) => a + (i.d || 0), 0));
+const WD = [[1, 'B.e'], [2, 'Ç.a'], [3, 'Ç'], [4, 'C.a'], [5, 'C'], [6, 'Ş'], [0, 'B']];
+const todayStr = () => { const t = new Date(); return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`; };
+const promoOn = pr => { const ds = todayStr(); return (!pr.from || ds >= pr.from) && (!pr.to || ds <= pr.to) && (!(pr.wd || []).length || pr.wd.includes(new Date().getDay())); };
+const promoSt = pr => { const ds = todayStr(); return pr.to && ds > pr.to ? 'bitib' : pr.from && ds < pr.from ? 'gözləyir' : promoOn(pr) ? 'aktiv' : 'bu gün deyil'; };
+function bestPromo(p, qty) {
+  let best = { d: 0, n: '' };
+  (cfg.promos || []).filter(pr => promoOn(pr) && (pr.pid ? pr.pid === p.id : pr.type === 'pct')).forEach(pr => {
+    const d = pr.type === 'bogo' ? Math.floor(qty / (pr.x + pr.y)) * pr.y * p.sell : pr.type === 'pct' ? p.sell * qty * pr.v / 100 : Math.max(0, p.sell - pr.v) * qty;
+    if (d > best.d) best = { d: r2(d), n: pr.name };
+  });
+  return best;
+}
+const promoTag = (p, q) => { const b = bestPromo(p, q); return b.d ? ` • 🏷 ${esc(b.n)} −${money(b.d)}` : ''; };
+function price() {
+  const L = cart.map(i => { const p = products.find(x => x.id === i.id); if (!p) return null; const b = bestPromo(p, i.qty); return { p, qty: i.qty, d: b.d, n: b.n }; }).filter(Boolean);
+  const sub = r2(L.reduce((a, l) => a + l.p.sell * l.qty - l.d, 0)), c = customers.find(x => x.id === loy.cid) || null;
+  const max = c && PV() > 0 ? Math.min(c.pts || 0, Math.floor(sub / PV())) : 0, use = Math.max(0, Math.min(Math.floor(loy.use) || 0, max));
+  const lv = r2(Math.min(sub, use * PV()));
+  return { L, sub, c, use, loy: lv, total: r2(sub - lv) };
+}
+const loyInfo = P => P.c ? `<div class="card item"><div class="grow"><b>${esc(P.c.name)}</b><small>⭐ ${P.c.pts || 0} xal • ${money((P.c.pts || 0) * PV())}</small></div></div>
+  <div class="bar" style="margin-top:8px"><input id="lu" type="number" inputmode="numeric" min="0" placeholder="Neçə xal işlət" value="${P.use || ''}" onchange="loyUse()"><button class="btn gh" style="width:auto;padding:0 14px" onclick="loyUse(1)">Hamısı</button></div>`
+  : loy.nf ? '<small>Müştəri tapılmadı.</small><button class="btn gh" style="margin-top:6px" onclick="newCustLoy()">➕ Yeni müştəri</button>' : '';
+function loyFind() {
+  const ph = $('#lp').value, q = dg(ph), c = q.length >= 7 && customers.find(x => dg(x.phone) === q);
+  loy = { cid: c ? c.id : '', use: 0, ph, nf: !c }; payModal(payMode);
+}
+function loyUse(all) {
+  const P = price(); if (!P.c) return; const max = PV() > 0 ? Math.min(P.c.pts || 0, Math.floor(P.sub / PV())) : 0;
+  loy.use = all ? max : Math.max(0, Math.min(max, parseInt($('#lu').value, 10) || 0)); $('#lu').value = loy.use || ''; calc();
+}
+function newCustLoy() { newPhone = $('#lp').value; newCust('loy'); }
+const promoDesc = pr => { const p = products.find(x => x.id === pr.pid), n = p ? p.name : 'Bütün məhsullar';
+  return (pr.type === 'bogo' ? `${n}: ${pr.x}-ni al, ${pr.y}-i pulsuz` : pr.type === 'pct' ? `${n}: ${pr.v}% endirim` : `${n}: ${money(pr.v)}`) + (pr.from || pr.to ? ` • ${pr.from || '…'} → ${pr.to || '…'}` : '') + ((pr.wd || []).length ? ' • ' + WD.filter(w => pr.wd.includes(w[0])).map(w => w[1]).join(',') : ''); };
+const promoCard = () => `<div class="card"><h2>🏷 Aksiyalar</h2>${(cfg.promos || []).map(pr => `<div class="item" style="margin-bottom:10px" onclick="promoForm('${pr.id}')"><div class="grow"><b>${esc(pr.name)}</b><small style="white-space:normal">${esc(promoDesc(pr))}</small></div><span class="badge ${promoSt(pr) === 'aktiv' ? 'ok' : 'wa'}">${promoSt(pr)}</span></div>`).join('') || '<small>Aksiya yoxdur</small><br>'}<br><button class="btn gh" onclick="promoForm()">+ Yeni aksiya</button></div>`;
+function promoForm(id) {
+  const pr = (cfg.promos || []).find(x => x.id === id) || { type: 'bogo', x: 2, y: 1, v: '', wd: [] }, sel = t => pr.type === t ? ' selected' : '';
+  modal(`<h2>${id ? 'Aksiyanı redaktə et' : 'Yeni aksiya'}</h2>
+  <label>Ad<input id="pf-n" value="${esc(pr.name || '')}" placeholder="Məs: Həftəsonu endirimi"></label>
+  <label>Növ<select id="pf-t" onchange="pfType()"><option value="bogo"${sel('bogo')}>N-ni al, M-i pulsuz</option><option value="pct"${sel('pct')}>Faiz endirimi</option><option value="price"${sel('price')}>Müddətli xüsusi qiymət</option></select></label>
+  <label>Məhsul<select id="pf-p"><option value="">Bütün məhsullar (yalnız faiz endirimi)</option>${products.map(p => `<option value="${p.id}"${p.id === pr.pid ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
+  <div id="pf-b" class="row2"><label>Al (N)<input id="pf-x" type="number" min="1" value="${pr.x || 2}"></label><label>Pulsuz (M)<input id="pf-y" type="number" min="1" value="${pr.y || 1}"></label></div>
+  <label id="pf-vl"><span id="pf-vt">Dəyər</span><input id="pf-v" type="number" step="0.01" min="0" value="${pr.v}"></label>
+  <div class="row2"><label>Başlanğıc tarix<input id="pf-f" type="date" value="${pr.from || ''}"></label><label>Son tarix<input id="pf-e" type="date" value="${pr.to || ''}"></label></div>
+  <small>Günlər (heç biri seçilməsə, hər gün):</small><div class="wds">${WD.map(([d, l]) => `<label class="wd"><input type="checkbox" id="wd${d}"${(pr.wd || []).includes(d) ? ' checked' : ''}>${l}</label>`).join('')}</div>
+  <small>Son tarixdən sonra aksiya avtomatik söndürülür.</small>
+  <div class="row2" style="margin-top:12px">${id ? `<button class="btn er" onclick="promoDel('${id}')">Sil</button>` : '<button class="btn gh" onclick="closeModal()">Ləğv et</button>'}<button class="btn" onclick="promoSave('${id || ''}')">Yadda saxla</button></div>`);
+  pfType();
+}
+function pfType() { const t = $('#pf-t').value; $('#pf-b').style.display = t === 'bogo' ? '' : 'none'; $('#pf-vl').style.display = t === 'bogo' ? 'none' : ''; $('#pf-vt').textContent = t === 'pct' ? 'Endirim (%)' : 'Xüsusi qiymət (₼)'; }
+function promoSave(id) {
+  const t = $('#pf-t').value, pid = $('#pf-p').value, x = parseInt($('#pf-x').value, 10), y = parseInt($('#pf-y').value, 10), v = parseFloat($('#pf-v').value);
+  const pr = { id: id || uid(), name: $('#pf-n').value.trim(), type: t, pid, x, y, v, from: $('#pf-f').value, to: $('#pf-e').value, wd: WD.map(w => w[0]).filter(d => $('#wd' + d).checked) };
+  if (!pr.name) return toast('Aksiyanın adını yazın', 'err');
+  if (t === 'bogo' ? (!pid || !(x >= 1) || !(y >= 1)) : (!(v >= 0) || (t === 'price' && !pid) || (t === 'pct' && v > 100))) return toast(t === 'pct' ? 'Faizi düzgün yazın (0–100)' : 'Məhsulu və dəyərləri düzgün yazın', 'err');
+  if (pr.from && pr.to && pr.to < pr.from) return toast('Son tarix başlanğıcdan əvvəl ola bilməz', 'err');
+  cfg.promos = (cfg.promos || []).filter(p => p.id !== pr.id).concat(pr); save(); closeModal(); rSet(); toast('Aksiya saxlanıldı', 'ok');
+}
+function promoDel(id) { if (!confirm('Aksiya silinsin?')) return; cfg.promos = (cfg.promos || []).filter(p => p.id !== id); save(); closeModal(); rSet(); }
+const loyCard = () => `<div class="card"><h2>⭐ Sadiqlik xalları</h2><div class="row2"><label>1 ₼-ə neçə xal<input id="le" type="number" step="0.1" min="0" value="${PE()}"></label><label>1 xal neçə ₼<input id="lv" type="number" step="0.001" min="0" value="${PV()}"></label></div><small>Məs: 1 və 0.01 = hər alışdan 1% xal geri. İkisini 0 etsəniz söndürülür. Müştəri telefon nömrəsi ilə tapılır.</small><br><br><button class="btn gh" onclick="saveLoy()">Yadda saxla</button></div>`;
+function saveLoy() { cfg.ptEarn = Math.max(0, parseFloat($('#le').value) || 0); cfg.ptVal = Math.max(0, parseFloat($('#lv').value) || 0); save(); toast('Yadda saxlanıldı', 'ok'); }
+/* şəkil paylaşma (kataloq, çek) */
+const loadImg = src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
+const fitText = (x, s, w) => { if (x.measureText(s).width <= w) return s; while (s.length > 1 && x.measureText(s + '…').width > w) s = s.slice(0, -1); return s + '…'; };
+const rr = (x, a, b, w, h, r) => { x.beginPath(); if (x.roundRect) x.roundRect(a, b, w, h, r); else x.rect(a, b, w, h); };
+const toBlob = c => new Promise(r => c.toBlob(r, 'image/png'));
+async function shareFiles(files, text) {
+  if (navigator.canShare && navigator.canShare({ files })) { try { await navigator.share({ files, text }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  files.forEach(f => dl(f.name, f, f.type)); toast('Şəkil yükləndi. Qalereyadan paylaşın', 'ok');
+}
+function catModal() {
+  const l = products.filter(p => p.sell > 0 && p.stock > 0).sort((a, b) => a.name.localeCompare(b.name, 'az'));
+  if (!l.length) return toast('Stokda məhsul yoxdur', 'err');
+  modal(`<h2>📣 Kataloq</h2><small>Paylaşmaq istədiyiniz məhsulları seçin. Hər şəkildə 6 məhsul olur.</small>
+  <div class="cl">${l.map(p => `<label class="chk"><input type="checkbox" class="cp" value="${p.id}" checked><span class="grow">${esc(p.name)}</span><b>${money(p.sell)}</b></label>`).join('')}</div>
+  <div class="row2"><button class="btn gh" onclick="closeModal()">Ləğv et</button><button class="btn" onclick="catMake()">Şəkillər yarat</button></div>`);
+}
+async function catMake() {
+  const l = [...document.querySelectorAll('.cp')].filter(e => e.checked).map(e => products.find(p => p.id === e.value)).filter(Boolean);
+  if (!l.length) return toast('Məhsul seçin', 'err');
+  toast('Şəkillər hazırlanır…'); const files = [], W = 1080, H = 1350, per = 6, cw = 480, ch = 540;
+  for (let pg = 0; pg * per < l.length; pg++) {
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d'), g = x.createLinearGradient(0, 0, W, 0);
+    g.addColorStop(0, '#3730a3'); g.addColorStop(1, '#6366f1'); x.fillStyle = '#f3f4fa'; x.fillRect(0, 0, W, H); x.fillStyle = g; x.fillRect(0, 0, W, 150);
+    x.fillStyle = '#fff'; x.font = '700 54px system-ui,sans-serif'; x.textBaseline = 'middle'; x.fillText(fitText(x, cfg.shop, W - 80), 40, 75);
+    const part = l.slice(pg * per, pg * per + per);
+    for (let k = 0; k < part.length; k++) {
+      const p = part[k], cx = 40 + (k % 2) * (cw + 40), cy = 190 + Math.floor(k / 2) * (ch + 30), im = p.img ? await loadImg(p.img) : null;
+      x.fillStyle = '#fff'; rr(x, cx, cy, cw, ch, 28); x.fill();
+      if (im) { x.save(); rr(x, cx + 20, cy + 20, cw - 40, 330, 20); x.clip(); x.drawImage(im, cx + 20, cy + 20, cw - 40, 330); x.restore(); }
+      else { x.fillStyle = '#eef0ff'; rr(x, cx + 20, cy + 20, cw - 40, 330, 20); x.fill(); x.fillStyle = '#3730a3'; x.font = '700 120px system-ui,sans-serif'; x.textAlign = 'center'; x.fillText((p.name.trim()[0] || '?').toUpperCase(), cx + cw / 2, cy + 185); x.textAlign = 'left'; }
+      x.fillStyle = '#14152b'; x.font = '600 34px system-ui,sans-serif'; x.fillText(fitText(x, p.name, cw - 40), cx + 20, cy + 395);
+      x.fillStyle = '#3730a3'; x.font = '800 48px system-ui,sans-serif'; x.fillText(money(p.sell), cx + 20, cy + 465);
+      if (p.stock <= 3) { x.fillStyle = '#d97706'; x.font = '600 26px system-ui,sans-serif'; x.fillText('Son ' + p.stock + ' ədəd', cx + 20, cy + 510); }
+    }
+    x.fillStyle = '#6b6f8a'; x.font = '600 30px system-ui,sans-serif'; x.textAlign = 'center'; x.fillText((cfg.phone ? '📞 Sifariş: ' + cfg.phone + '  •  ' : '') + 'Lavanda™', W / 2, H - 40);
+    files.push(new File([await toBlob(c)], `kataloq-${pg + 1}.png`, { type: 'image/png' }));
+  }
+  closeModal(); await shareFiles(files, cfg.shop);
+}
+async function receiptImg(id) {
+  const s = sales.find(q => q.id === id), W = 640, c = document.createElement('canvas'); c.width = W; c.height = 3000; const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, 3000); x.fillStyle = '#000'; x.textBaseline = 'top'; let y = 30;
+  const F = (w, z) => { x.font = `${w} ${z}px system-ui,sans-serif`; }, ctr = (t, z, w = 400) => { F(w, z); x.textAlign = 'center'; x.fillText(t, W / 2, y); y += z + 12; };
+  const row = (a, b, bold) => { F(bold ? 700 : 400, 26); x.textAlign = 'left'; x.fillText(fitText(x, a, W - 250), 30, y); x.textAlign = 'right'; x.fillText(b, W - 30, y); y += 38; };
+  const line = () => { x.fillStyle = '#999'; x.fillRect(30, y + 4, W - 60, 2); x.fillStyle = '#000'; y += 20; };
+  const wr = t => { F(400, 26); x.textAlign = 'left'; let ln = ''; t.split(' ').forEach(w => { const tt = ln ? ln + ' ' + w : w; if (x.measureText(tt).width > W - 60 && ln) { x.fillText(ln, 30, y); y += 34; ln = w; } else ln = tt; }); x.fillText(ln, 30, y); y += 36; };
+  x.fillStyle = '#000'; ctr(fitText(x, cfg.shop, W - 60), 40, 800); if (cfg.phone) ctr(cfg.phone, 24); ctr(dt(s.ts) + ' • ' + (s.seller || ''), 24); line();
+  s.items.forEach(i => row(`${i.name} ×${Math.abs(i.qty)}`, money(i.sell * i.qty)));
+  if (dsum(s)) row('Endirim', money(-dsum(s)));
+  line(); row('CƏMİ', money(s.total), 1); payLines(s).forEach(([k, v]) => row(k, money(v))); if (s.pe) row('⭐ Qazanılan xal', '+' + s.pe);
+  const d = s.dlv;
+  if (d) { y += 8; line(); F(700, 26); x.textAlign = 'left'; x.fillText('📦 ÇATDIRILMA', 30, y); y += 38; [d.name, d.phone, d.addr, d.zip ? 'Poçt indeksi: ' + d.zip : '', d.pay === 'cod' ? 'KURYER ALACAQ: ' + money(s.total) : 'ÖDƏNİLİB (online)'].filter(Boolean).forEach(wr); }
+  y += 10; ctr('Qeyri-fiskal qəbz', 22); const g = x.createLinearGradient(W / 2 - 120, 0, W / 2 + 120, 0); g.addColorStop(0, '#3730a3'); g.addColorStop(1, '#6366f1'); x.fillStyle = g; ctr('Lavanda™', 44, 800); x.fillStyle = '#000';
+  const M = d && QR.make(mapUrl(d));
+  if (M) { const n = M.length, px = Math.max(3, Math.floor(300 / (n + 6))), z = (n + 6) * px, ox = (W - z) / 2; x.fillStyle = '#fff'; x.fillRect(ox, y, z, z); x.fillStyle = '#000'; M.forEach((r, j) => r.forEach((v, k) => { if (v) x.fillRect(ox + (k + 3) * px, y + (j + 3) * px, px, px); })); y += z + 6; ctr('Ünvanı skan edin (xəritə)', 22); }
+  const o = document.createElement('canvas'); o.width = W; o.height = Math.ceil(y + 20); o.getContext('2d').drawImage(c, 0, 0);
+  return toBlob(o);
+}
+async function shareImg(id) { toast('Şəkil hazırlanır…'); const b = await receiptImg(id); if (!b) return toast('Şəkil yaradılmadı', 'err'); await shareFiles([new File([b], 'qebz.png', { type: 'image/png' })], ''); }
+/* təchizatçıya sifariş */
+const waNum = p => { const d = String(p || '').replace(/\D/g, ''); return d.startsWith('994') ? d : d.startsWith('0') ? '994' + d.slice(1) : d.length === 9 ? '994' + d : d; };
+function supModal() {
+  const l = products.filter(p => p.stock <= LOW).sort((a, b) => a.stock - b.stock); if (!l.length) return toast('Az qalan məhsul yoxdur', 'ok');
+  const s = cfg.sup || {};
+  modal(`<h2>📦 Təchizatçıya sifariş</h2><label>Təchizatçı<input id="sp-n" value="${esc(s.n || '')}" placeholder="Ad (ixtiyari)"></label><label>WhatsApp nömrəsi (ixtiyari)<input id="sp-p" type="tel" inputmode="tel" value="${esc(s.p || '')}" placeholder="050 123 45 67"></label>
+  ${l.map(p => `<div class="card item"><label class="chk" style="margin:0;flex:1"><input type="checkbox" class="sk" value="${p.id}" checked><span class="grow"><b>${esc(p.name)}</b><small>stok: ${p.stock}</small></span></label><input class="sq" data-id="${p.id}" type="number" min="1" value="${Math.max(LOW * 2 - p.stock, 1)}" style="width:80px"></div>`).join('')}
+  <div class="row2" style="margin-top:12px"><button class="btn gh" onclick="closeModal()">Ləğv et</button><button class="btn" onclick="supSend()">💬 WhatsApp</button></div>`);
+}
+function supSend() {
+  const q = [...document.querySelectorAll('.sq')], items = [...document.querySelectorAll('.sk')].filter(e => e.checked).map(e => {
+    const p = products.find(x => x.id === e.value), n = q.find(z => z.dataset.id === e.value); return p && `${p.name} — ${parseInt(n && n.value, 10) || 1} ədəd`; }).filter(Boolean);
+  if (!items.length) return toast('Məhsul seçin', 'err');
+  cfg.sup = { n: $('#sp-n').value.trim(), p: $('#sp-p').value.trim() }; save();
+  const t = `Salam${cfg.sup.n ? ', ' + cfg.sup.n : ''}! Aşağıdakı malları sifariş vermək istəyirik:\n\n${items.map((v, i) => `${i + 1}. ${v}`).join('\n')}\n\nMağaza: ${cfg.shop}${cfg.phone ? '\nƏlaqə: ' + cfg.phone : ''}\nTəşəkkürlər!`;
+  open('https://wa.me/' + waNum(cfg.sup.p) + '?text=' + encodeURIComponent(t), '_blank');
+}
+/* səslə axtarış */
+function voice(id) {
+  const R = window.SpeechRecognition || window.webkitSpeechRecognition; if (!R) return toast('Bu brauzer səsli axtarışı dəstəkləmir', 'err');
+  const r = new R(); r.lang = 'az-AZ'; r.interimResults = false; r.maxAlternatives = 1; toast('🎤 Danışın…');
+  r.onresult = e => { const el = $('#' + id); el.value = e.results[0][0].transcript.replace(/[.,!?]+$/, '').trim(); el.dispatchEvent(new Event('input')); };
+  r.onerror = e => toast(e.error === 'not-allowed' ? 'Mikrofona icazə verilməyib' : 'Səs tanınmadı, yenidən cəhd edin', 'err'); r.start();
 }
 
 /* ---------- Başlanğıc ---------- */

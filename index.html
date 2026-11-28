@@ -25,13 +25,14 @@
 <main>
   <section id="v-sell" class="view on">
     <div class="bar" style="margin-bottom:8px"><button id="sel" class="chip" onclick="sellerModal()"></button><button class="chip" onclick="custList()">📒 Nisyə</button><button class="chip" onclick="dlvList()">🚚 Çatdırılma</button></div>
-    <div class="bar"><input id="q" placeholder="Barkod və ya məhsul adı" autocomplete="off" enterkeyhint="done"><button class="ic" onclick="openScan('sell')" aria-label="Barkod skan et">📷</button></div>
+    <div class="bar"><input id="q" placeholder="Barkod və ya məhsul adı" autocomplete="off" enterkeyhint="done"><button class="ic" onclick="openScan('sell')" aria-label="Barkod skan et">📷</button><button class="ic" onclick="voice('q')" aria-label="Səslə axtar">🎤</button></div>
     <div id="sug"></div>
     <div id="qs"></div>
     <div id="cartl"></div>
   </section>
   <section id="v-prod" class="view">
-    <div class="bar"><input id="pq" placeholder="Axtarış: ad və ya barkod" oninput="rProd()" autocomplete="off"><button class="ic" onclick="openScan('search')" aria-label="Barkod skan et">📷</button><button class="ic" onclick="editProduct()" aria-label="Yeni məhsul">+</button></div>
+    <div class="bar"><input id="pq" placeholder="Axtarış: ad və ya barkod" oninput="rProd()" autocomplete="off"><button class="ic" onclick="openScan('search')" aria-label="Barkod skan et">📷</button><button class="ic" onclick="voice('pq')" aria-label="Səslə axtar">🎤</button><button class="ic" onclick="editProduct()" aria-label="Yeni məhsul">+</button></div>
+    <div class="bar" style="margin-top:8px"><button class="chip" onclick="catModal()">📣 Kataloq</button><button class="chip" onclick="supModal()">📦 Təchizatçıya sifariş</button></div>
     <div id="plist"></div>
   </section>
   <section id="v-rep" class="view"></section>
